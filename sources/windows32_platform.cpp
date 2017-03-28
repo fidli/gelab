@@ -42,7 +42,7 @@
     
 #define PERSISTENT_MEM MEGABYTE(0)
 #define TEMP_MEM MEGABYTE(10)
-#define STACK_MEM MEGABYTE(0)
+#define STACK_MEM MEGABYTE(10)
     
     
 #include "util_mem.h"
