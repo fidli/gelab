@@ -55,6 +55,7 @@
 #include "util_image.cpp"
 #include "util_conv.cpp"
     
+    
     static inline DWORD jettisonAllPrivileges() {
         DWORD result = ERROR_SUCCESS;
         HANDLE processToken  = NULL;
