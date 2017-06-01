@@ -28,7 +28,7 @@
         
         
         
-        
+        /*
         
         //get the rotation angle automatically - locate image corners
         //lets do weighted HOG 100 x 100 tiles and find any left and right side
@@ -48,7 +48,7 @@
             for(uint32 y = 0; y < bitmap.info.height; y = y + tileH){
                 for(uint32 dX = x + 1; dX < tileW + x - 1; dX++){
                     for(uint32 dY = y + 1; dY < tileH + y - 1; dY++){
-                        
+                    
                         //imagine pixels as numpad, middle pixel is 5, indexed from 0, instead of 1
                         pixelArea[0] = bitmap.data[(dY + 1) * bitmap.info.width + dX - 1];
                         pixelArea[1] = bitmap.data[(dY + 1) * bitmap.info.width + dX];
@@ -186,7 +186,7 @@
                 if(source->size > 2){
                     //consider this tile as lit
                     if(topLeftStreak){
-                        
+                    
                     }else{
                         topLeft.x = tileX;
                         topLeft.y = tileY;
@@ -198,6 +198,69 @@
         
         
         POPI;
+        */
+        
+        uint8 threshold = 20;
+        
+        //sample 1
+        bool foundTop = false;
+        bool foundBot = false;
+        int32 h1 = bitmap.info.height / 3;
+        int32 h2 = h1 + bitmap.info.height / 10;
+        int32 wj = bitmap.info.width / 10;
+        
+        int32 w1, w2;
+        
+        for(uint32 w = 0; w < bitmap.info.width && (!foundBot || !foundTop); w++){
+            if(!foundTop){
+                if(bitmap.data[h1 * bitmap.info.width + w] >= threshold && bitmap.data[h1 * bitmap.info.width + w + wj] >= threshold){
+                    foundTop = true;
+                    w1= w;
+                }
+            }
+            if(!foundBot){
+                if(bitmap.data[h2 * bitmap.info.width + w] >= threshold && bitmap.data[h2 * bitmap.info.width + w + wj] >= threshold){
+                    foundBot = true;
+                    w2= w;
+                }
+            }
+        }
+        
+        v2 rotation = V2((float32)(w2 - w1),(float32)(h2 - h1));
+        v2 down = V2(0, 1);
+        float32 degAngle = radAngle(rotation, down) * 180 / PI;
+        
+        
+        ASSERT(foundTop && foundBot);
+        
+        //sample finished
+        
+        rotateImage(&bitmap, degAngle, (float32)(w1/bitmap.info.width), (float32)(h1/bitmap.info.height));
+        
+        //crop
+        uint32 lX, rX, tY, bY;
+        int32 h = bitmap.info.height / 2;
+        uint32 w = 0;
+        for(; w < bitmap.info.width; w++){
+            if(bitmap.data[h1 * bitmap.info.width + w] >= threshold && bitmap.data[h1 * bitmap.info.width + w + wj] >= threshold){
+                break;
+            }
+            
+        }
+        lX = w;
+        
+        for(w = bitmap.info.width - 1; w >= 0; w--){
+            if(bitmap.data[h1 * bitmap.info.width + w] >= threshold && bitmap.data[h1 * bitmap.info.width + w - wj] >= threshold){
+                break;
+            }
+            
+        }
+        rX = w;
+        cropImageX(&bitmap, lX, rX);
+        
+        
+        
+        
         
         
         FileContents bmp;
