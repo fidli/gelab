@@ -41,13 +41,11 @@
     
     
 #define PERSISTENT_MEM MEGABYTE(0)
-#define TEMP_MEM MEGABYTE(10)
+#define TEMP_MEM MEGABYTE(200)
 #define STACK_MEM MEGABYTE(10)
     
     
 #include "util_mem.h"
-    
-    
 #include "util_io.cpp"
 #include "util_string.cpp"
 #include "windows_io.cpp"
@@ -116,7 +114,7 @@
                 printf("Usage:\n");
                 printf("%s filename\n", argv[0]);
                 printf(" filename - original TIFF file from measurement\n"); 
-                strcpy(parameters.file, "data/160907_gel1.tif");
+                strcpy(parameters.file, "data/160907_gel2.tif");
                 parameters.columns = 24;
                 parameters.targetMark = 5;
                 run(&parameters);
