@@ -114,7 +114,7 @@
                 printf("Usage:\n");
                 printf("%s filename\n", argv[0]);
                 printf(" filename - original TIFF file from measurement\n"); 
-                strcpy(parameters.file, "data/160907_gel2.tif");
+                strcpy(parameters.file, "data/160907_gel1.tif");
                 parameters.columns = 24;
                 parameters.targetMark = 5;
                 run(&parameters);

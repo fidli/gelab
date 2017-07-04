@@ -24,13 +24,24 @@
         Image bitmap;
         decodeTiff(&imageFile, &bitmap);
         
+        ASSERT(bitmap.info.bitsPerSample * bitmap.info.samplesPerPixel == 8);
+        
         //contrast the image
         
+        uint32 averageIntensity = 0;
+        for(uint32 w = 0; w < bitmap.info.width; w++){
+            for(uint32 h = 0; h < bitmap.info.height; h++){
+                averageIntensity += bitmap.data[w + h*bitmap.info.width];
+            }
+        }
         
-        applyContrast(&bitmap, -15);
+        averageIntensity /= bitmap.info.width * bitmap.info.height;
+        float32 dst = (float32)(20 - averageIntensity);
+        applyContrast(&bitmap, -1.5f * dst);
         
         
-        /*FileContents bmp2;
+        /*
+        FileContents bmp2;
         encodeBMP(&bitmap, &bmp2);
         saveFile("bmp.bmp", &bmp2);
         return;
@@ -39,7 +50,7 @@
         uint8 thresholdX = 20;
         uint8 thresholdY = 4;
         
-        uint8 rotatingSamples = 9;
+        uint8 rotatingSamples = 5;
         int32 wj = bitmap.info.width / 10;
         {
             PUSHI;
@@ -85,19 +96,41 @@
             v2 rotation = {};
             v2 center = {};
             
-            //take the most similar vectors
+            uint8 biggestCluster = 0;
             
+            //take the most similar vectors
             for(uint8 ri = 0; ri < rotationCount; ri++){
-                center += centers[ri];
-                rotation += rotations[ri];
+                uint8 currentCluster = 0;
+                v2 currentRotation = {};
+                v2 currentCenter = {};
+                for(uint8 ri2 = 0; ri2 < rotationCount; ri2++){
+                    if(ri2 != ri){
+                        //normalized, dot = len * len * cos
+                        //therefore dot = cosine
+                        //looking for it to be near 1 - since cos of 0 deg is 1
+                        if(dot(rotations[ri], rotations[ri2]) > 0.93){
+                            currentCenter += centers[ri];
+                            currentRotation += rotations[ri];
+                            currentCluster++;
+                        }
+                    }
+                }
+                if(currentCluster > biggestCluster){
+                    center = currentCenter;
+                    rotation = currentRotation;
+                    center *= 1.0/currentCluster;
+                    rotation *= 1.0/currentCluster;
+                    biggestCluster = currentCluster;
+                }
             }
             
-            center *= 1.0/rotationCount;
-            rotation *= 1.0/rotationCount;
+            ASSERT(biggestCluster > 0);
             
             v2 down = V2(0, 1);
             float32 degAngle = radAngle(rotation, down) * 180 / PI;
-            
+            if(det(rotation, down) < 0){
+                degAngle *= -1;
+            }
             
             POPI;
             
@@ -105,12 +138,12 @@
             
             rotateImage(&bitmap, degAngle, center.x, center.y);
         }
-        
+        /*
         FileContents bmp2;
         encodeBMP(&bitmap, &bmp2);
         saveFile("bmp.bmp", &bmp2);
         return;
-        
+        */
         
         {
             //crop
@@ -340,33 +373,36 @@
         
         Cluster mark;
         
-        float32 borders = 0.03f;
+        float32 bordersX = 0.03f;
+        float32 topBorder = 0.1f;
         
-        uint32 colW = (uint32)(bitmap.info.width * (1-borders)) / parameters->columns;
+        uint32 colW = (uint32)(bitmap.info.width * (1-bordersX)) / parameters->columns;
         
         uint8 markGradientThreshold = 4;
-        uint8 markIntensityThreshold = 20;
-        uint16 k = 2;
+        uint8 markIntensityThreshold = 15;
+        uint16 k = 3;
         uint8 * pixelKArea = &PUSHA(uint8, k*k);
         bool lastCluster = false;
         uint32 currentAverage = 0;
         //kNN sort of clustering
         
-        uint8 markIntensityDifferenceThreshold = 15;
-        float32 clusterMembershipQuorum = 0.35f;
+        uint8 markIntensityDifferenceThreshold = 10;
+        float32 clusterMembershipQuorum = 0.3f;
         float32 clusterWidthQuorum = 0.4f;
+        uint8 clusterMinimum = 0;
         
         //finding the left side mark
         int16 markIndex = 0;
         
-        for(uint32 y = k; y < bitmap.info.height - 1; y++){
+        for(uint32 y = (k + (uint32)(topBorder*bitmap.info.height)); y < bitmap.info.height - k; y++){
             currentAverage = 0;
-            for(uint32 x = k + (uint32)((borders/2)*bitmap.info.width); x < colW + (uint32)((borders/2)*bitmap.info.width); x++){
+            uint32 averageIntensity = 0;
+            for(uint32 x = k + (uint32)((bordersX/2)*bitmap.info.width); x < colW + (uint32)((bordersX/2)*bitmap.info.width); x++){
                 if(gradients[y * bitmap.info.width + x].size > markGradientThreshold &&
                    bitmap.data[y * bitmap.info.width + x] > markIntensityThreshold){
                     
                     uint16 areasize = 0;
-                    for(uint32 kX = x - k; kX < colW + (uint32)((borders/2)*bitmap.info.width) && kX < x + k + 1; kX++){
+                    for(uint32 kX = x - k; kX < colW + (uint32)((bordersX/2)*bitmap.info.width) && kX < x + k + 1; kX++){
                         for(uint32 kY = y - k; kY < bitmap.info.height-1 && kY < y + k + 1; kY++){
                             pixelKArea[areasize] = bitmap.data[kY * bitmap.info.width + kX];
                             areasize++;
@@ -377,13 +413,14 @@
                     for(uint16 pi = 0; pi < areasize; pi++){
                         int16 difference = ((int16) pixelKArea[pi] - (int16) pixelKArea[k*(k*2+1) + k]);
                         ASSERT(difference < 256);
-                        if(ABS(difference) >= markIntensityDifferenceThreshold){
+                        if(ABS(difference) >= markIntensityDifferenceThreshold || (lastCluster && pixelKArea[pi] >= clusterMinimum)){
                             members++;
                         }
                     }
                     
                     if(members > clusterMembershipQuorum*(2*k+1)*(2*k+1)){
                         currentAverage += 1;
+                        averageIntensity += bitmap.data[y*bitmap.info.width + x];
                         //bitmap.data[y * bitmap.info.width + x] = 255;
                     }else{
                         //bitmap.data[y * bitmap.info.width + x] = 0;
@@ -395,13 +432,15 @@
             }
             
             if(currentAverage > clusterWidthQuorum * colW){
-                /*for(uint32 x = 0; x < colW; x++){
-                bitmap.data[y*bitmap.info.width + x] = 100;
-                }*/
+                
                 if(!lastCluster){
                     mark.startY = y;
+                    clusterMinimum = averageIntensity / currentAverage;
                 }
                 lastCluster = true;
+                /*for(uint32 x = 0; x < colW; x++){
+                    bitmap.data[y*bitmap.info.width + x] = 100;
+                }*/
             }else{
                 if(lastCluster){
                     mark.endY = y;
@@ -440,7 +479,7 @@
         
         
         for(uint8 ci = 1; ci < parameters->columns; ci++){
-            printToBitmap(&bitmap, fontSize * strlen(message) + ci*colW + (uint32)((borders/2)*bitmap.info.width), bitmap.info.height - colW,  "A", &font, colW);
+            printToBitmap(&bitmap, fontSize * strlen(message) + ci*colW + (uint32)((bordersX/2)*bitmap.info.width), bitmap.info.height - colW,  "A", &font, colW);
         }
         
         POPI;
