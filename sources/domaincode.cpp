@@ -482,11 +482,14 @@
             printToBitmap(&bitmap, fontSize * strlen(message) + ci*colW + (uint32)((bordersX/2)*bitmap.info.width), bitmap.info.height - colW,  "A", &font, colW);
         }
         
+        
+        
+        
+        
+        FileContents tiff;
+        encodeTiff(&bitmap, &tiff);
+        saveFile("crea.tif", &tiff);
+        
         POPI;
         
-        
-        
-        FileContents bmp;
-        encodeBMP(&bitmap, &bmp);
-        saveFile("bmp.bmp", &bmp);
 }
