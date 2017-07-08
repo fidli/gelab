@@ -2,9 +2,21 @@
 #include "util_font.cpp"
     
     struct RunParameters{
-        char file[256];
+        char inputfile[256];
+        char outputfile[256];
         uint8 columns;
         uint8 targetMark;
+        char markText[256];
+        uint8 blocksCount;
+        bool invertColors;
+        bool manualCrop;
+        bool dontInput[50];
+        char labels[50];
+        uint8 beginningSymbolIndex;
+        
+        uint8 labelsCount;
+        
+        bool dontMark;
     };
     
     struct PixelGradient{
@@ -20,9 +32,10 @@
     
     void run(RunParameters * parameters){
         FileContents imageFile;
-        readFile(parameters->file, &imageFile);
+        readFile(parameters->inputfile, &imageFile);
         Image bitmap;
         decodeTiff(&imageFile, &bitmap);
+        
         
         ASSERT(bitmap.info.bitsPerSample * bitmap.info.samplesPerPixel == 8);
         
@@ -469,7 +482,7 @@
         
         ASSERT(markIndex == parameters->targetMark);
         
-        const char * message = "MARK";
+        const char * message = "FUCK";
         
         uint32 fontSize = 24;
         
@@ -488,7 +501,7 @@
         
         FileContents tiff;
         encodeBMP(&bitmap, &tiff);
-        saveFile("crea.tif", &tiff);
+        saveFile(parameters->outputfile, &tiff);
         
         POPI;
         
