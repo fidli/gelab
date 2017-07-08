@@ -1,0 +1,23 @@
+# Apache configuration file (see httpd.apache.org/docs/current/mod/quickreference.html)
+
+# disable directory listing
+<IfModule mod_autoindex.c>
+	Options +Indexes
+</IfModule>
+
+# enable cool URL
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+	# RewriteBase /
+
+	# prevents files starting with dot to be viewed by browser
+	RewriteRule /\.|^\. - [F]
+
+	# front controller
+        RewriteCond %{REQUEST_URI} !^/www/ 
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule ^(.*)$ /www/$1
+	RewriteRule !\.(php|pdf|js|ico|gif|jpg|png|rar|zip|tar\.gz)$ www/index.php [L]
+</IfModule>
+

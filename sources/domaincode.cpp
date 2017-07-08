@@ -469,9 +469,9 @@
         
         ASSERT(markIndex == parameters->targetMark);
         
-        const char * message = "FUCK";
+        const char * message = "MARK";
         
-        uint32 fontSize = 64;
+        uint32 fontSize = 24;
         
         scaleCanvas(&bitmap, bitmap.info.width + fontSize * strlen(message), bitmap.info.height + colW, fontSize * strlen(message), 0);
         
@@ -487,7 +487,7 @@
         
         
         FileContents tiff;
-        encodeTiff(&bitmap, &tiff);
+        encodeBMP(&bitmap, &tiff);
         saveFile("crea.tif", &tiff);
         
         POPI;
