@@ -85,7 +85,7 @@
 #include "domaincode.cpp"
     
     static inline void printHelp(const char * binaryName){
-        printf("\nUsage: %s inputfile [-b num_of_blocks ] [-m order \"text\"] [-l list beginning_symbol_index -n total_column_count] [-i list] [-IM] outputfile\n\n", binaryName);
+        printf("\nUsage: %s inputfile [-b num_of_blocks] [-m order \"text\"] [-l list beginning_symbol_index -n total_column_count] [-i list] [-IM] outputfile\n\n", binaryName);
         printf(" inputfile\n  - original TIFF file from experiment\n\n");
         printf(" -b num_of_blocks\n  - valid range [1, 50]\n  - how many experiments are in inputfile - default: 1\n\n"); 
         
@@ -96,7 +96,7 @@
         printf(" -i list\n  - which blocks in the experiment to output, indexes separated by comma - default: outputs all\n  - valid 'index' range [1, 50]\n\n"); 
         
         printf(" -I\n  - do not invert colors\n\n");
-        printf(" -M\n  - crop and outline experiment automatically. This option will pop up a window that requires interaction\n\n");
+        printf(" -M\n  - crop and outline experiment manually. This option will pop up a window that requires interaction\n\n");
         
         printf(" outputfile\n  - where to save the ouput to\n"); 
         

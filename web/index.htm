@@ -4,10 +4,44 @@
 </head>
 <body>
 <h1>GeLab - genetic experiment labeler</h1>
-<h2>Repository: <a href="https://github.com/fidli/gelab">GitHub</a></h2>
+<h2>Repository: <a href="https://github.com/fidli/gelab">GitHub</a> powered with <a href="https://github.com/fidli/baselib">baselib</a></h2>
 <h2>Latest release: ALPHA</h2>
 <h2>About</h2>
 <p>GeLab is genetic experiment labeler. Its aim is to fully or partially automatize uncreative labeling routines after the experiment is done.</p>
+<h2>Usage</h2>
+<pre>Usage: build.exe inputfile [-b num_of_blocks] [-m order "text"] [-l list beginning_symbol_index -n total_column_count] [-i list] [-IM] outputfile
+
+ inputfile
+  - original TIFF file from experiment
+
+ -b num_of_blocks
+  - valid range [1, 50]
+  - how many experiments are in inputfile - default: 1
+
+ -m order "text"
+  - valid 'order' range [1, 255]
+  - find mark on place 'order' and put 'text' next to it, mark wont be added, if this is not set
+
+ -l list beginning_symbol_index
+  - valid 'beginning_symbol_range' range [1, 50]
+  - 'list' are ASCII characters (one letter) labeling experiment columns in cycle starting at 'beginning_symbol_index', requires -n to be set too, columns wont be marked if this is not set
+
+ -n total_column_count
+  - valid range [1, 255]
+  - sets the total column count that the experiment has
+
+ -i list
+  - which blocks in the experiment to output, indexes separated by comma - default: outputs all
+  - valid 'index' range [1, 50]
+
+ -I
+  - do not invert colors
+
+ -M
+  - crop and outline experiment manually. This option will pop up a window that requires interaction
+
+ outputfile
+  - where to save the ouput to</pre>
 <h2>Download</h2>
 <ul>
     <li>build it yourself for now</li>
