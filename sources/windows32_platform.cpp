@@ -98,7 +98,7 @@
         printf(" -I\n  - do not invert colors\n\n");
         printf(" -M\n  - crop and outline experiment manually. This option will pop up a window that requires interaction\n\n");
         
-        printf(" outputfile\n  - where to save the ouput to\n"); 
+        printf(" outputfile\n  - where to save the ouput to. THIS FILE WILL BE OVERWRITTEN\n"); 
         
     }
     
@@ -190,7 +190,7 @@
                                     valid = false;
                                     break;
                                 }
-                                parameters->targetMark = mark;
+                                parameters->targetMark = mark-1;
                                 parameters->dontMark = false;
                                 i += 2;
                             }break;
@@ -207,14 +207,14 @@
                                     valid = false;
                                     break;
                                 }
-                                uint32 i = 0;
-                                for(;buffer[i] != '\0'; i++){
+                                uint32 j = 0;
+                                for(;buffer[j] != '\0'; j++){
                                     if(parameters->labelsCount == 50){
                                         printf("Error: Labeling list exceeded count of 50.\n");
                                         valid = false;
                                         break;
                                     }
-                                    parameters->labels[parameters->labelsCount] = buffer[i];
+                                    parameters->labels[parameters->labelsCount] = buffer[j];
                                     parameters->labelsCount++;
                                 }
                                 
@@ -224,7 +224,7 @@
                                     break;
                                 }
                                 
-                                parameters->beginningSymbolIndex = index;
+                                parameters->beginningSymbolIndex = index-1;
                                 i += 2;
                             }break;
                             case 'n':{
@@ -250,8 +250,8 @@
                                     break;
                                 };
                                 
-                                for(int32 i = 0; i < ARRAYSIZE(parameters->dontInput); i++){
-                                    parameters->dontInput[i] = true;
+                                for(int32 j = 0; j < ARRAYSIZE(parameters->dontInput); j++){
+                                    parameters->dontInput[j] = true;
                                 }
                                 
                                 uint32 offset = 0;

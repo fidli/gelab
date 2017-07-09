@@ -379,124 +379,144 @@
         
         cropImageY(&bitmap, candidates[candidateIndex], 0);
         
-        struct Cluster{
-            uint32 startY;
-            uint32 endY;
-        };
         
-        Cluster mark;
-        
-        float32 bordersX = 0.03f;
-        float32 topBorder = 0.1f;
-        
-        uint32 colW = (uint32)(bitmap.info.width * (1-bordersX)) / parameters->columns;
-        
-        uint8 markGradientThreshold = 4;
-        uint8 markIntensityThreshold = 15;
-        uint16 k = 3;
-        uint8 * pixelKArea = &PUSHA(uint8, k*k);
-        bool lastCluster = false;
-        uint32 currentAverage = 0;
-        //kNN sort of clustering
-        
-        uint8 markIntensityDifferenceThreshold = 10;
-        float32 clusterMembershipQuorum = 0.3f;
-        float32 clusterWidthQuorum = 0.4f;
-        uint8 clusterMinimum = 0;
-        
-        //finding the left side mark
-        int16 markIndex = 0;
-        
-        for(uint32 y = (k + (uint32)(topBorder*bitmap.info.height)); y < bitmap.info.height - k; y++){
-            currentAverage = 0;
-            uint32 averageIntensity = 0;
-            for(uint32 x = k + (uint32)((bordersX/2)*bitmap.info.width); x < colW + (uint32)((bordersX/2)*bitmap.info.width); x++){
-                if(gradients[y * bitmap.info.width + x].size > markGradientThreshold &&
-                   bitmap.data[y * bitmap.info.width + x] > markIntensityThreshold){
-                    
-                    uint16 areasize = 0;
-                    for(uint32 kX = x - k; kX < colW + (uint32)((bordersX/2)*bitmap.info.width) && kX < x + k + 1; kX++){
-                        for(uint32 kY = y - k; kY < bitmap.info.height-1 && kY < y + k + 1; kY++){
-                            pixelKArea[areasize] = bitmap.data[kY * bitmap.info.width + kX];
-                            areasize++;
-                        }
-                    } 
-                    
-                    uint16 members = 0;
-                    for(uint16 pi = 0; pi < areasize; pi++){
-                        int16 difference = ((int16) pixelKArea[pi] - (int16) pixelKArea[k*(k*2+1) + k]);
-                        ASSERT(difference < 256);
-                        if(ABS(difference) >= markIntensityDifferenceThreshold || (lastCluster && pixelKArea[pi] >= clusterMinimum)){
-                            members++;
-                        }
-                    }
-                    
-                    if(members > clusterMembershipQuorum*(2*k+1)*(2*k+1)){
-                        currentAverage += 1;
-                        averageIntensity += bitmap.data[y*bitmap.info.width + x];
-                        //bitmap.data[y * bitmap.info.width + x] = 255;
-                    }else{
-                        //bitmap.data[y * bitmap.info.width + x] = 0;
-                    }
-                }else{
-                    //bitmap.data[y * bitmap.info.width + x] = 0;
-                }
+        //we are going to print
+        if(parameters->labelsCount != 0 || !parameters->dontMark){
+            
+            FileContents fontFile;
+            BitmapFont font;
+            readFile("font.bmp", &fontFile);
+            Image source;
+            decodeBMP(&fontFile, &source);
+            flipY(&source);
+            initBitmapFont(&font, &source, source.info.width / 16); 
+            uint32 fontSize = 24;
+            uint32 markOffset = 0;
+            
+            float32 bordersX = 0.03f;
+            float32 topBorder = 0.1f;
+            
+            
+            
+            uint32 colW = (uint32)(bitmap.info.width * (1-bordersX)) / (parameters->columns == 0 ? 20 : parameters->columns);
+            
+            
+            if(!parameters->dontMark){
                 
+                struct Cluster{
+                    uint32 startY;
+                    uint32 endY;
+                };
+                
+                Cluster mark;
+                
+                
+                uint8 markGradientThreshold = 4;
+                uint8 markIntensityThreshold = 15;
+                uint16 k = 3;
+                uint8 * pixelKArea = &PUSHA(uint8, k*k);
+                bool lastCluster = false;
+                uint32 currentAverage = 0;
+                //kNN sort of clustering
+                
+                uint8 markIntensityDifferenceThreshold = 10;
+                float32 clusterMembershipQuorum = 0.3f;
+                float32 clusterWidthQuorum = 0.4f;
+                uint8 clusterMinimum = 0;
+                
+                
+                //finding the left side mark
+                int16 markIndex = 0;
+                
+                for(uint32 y = (k + (uint32)(topBorder*bitmap.info.height)); y < bitmap.info.height - k; y++){
+                    currentAverage = 0;
+                    uint32 averageIntensity = 0;
+                    for(uint32 x = k + (uint32)((bordersX/2)*bitmap.info.width); x < colW + (uint32)((bordersX/2)*bitmap.info.width); x++){
+                        if(gradients[y * bitmap.info.width + x].size > markGradientThreshold &&
+                           bitmap.data[y * bitmap.info.width + x] > markIntensityThreshold){
+                            
+                            uint16 areasize = 0;
+                            for(uint32 kX = x - k; kX < colW + (uint32)((bordersX/2)*bitmap.info.width) && kX < x + k + 1; kX++){
+                                for(uint32 kY = y - k; kY < bitmap.info.height-1 && kY < y + k + 1; kY++){
+                                    pixelKArea[areasize] = bitmap.data[kY * bitmap.info.width + kX];
+                                    areasize++;
+                                }
+                            } 
+                            
+                            uint16 members = 0;
+                            for(uint16 pi = 0; pi < areasize; pi++){
+                                int16 difference = ((int16) pixelKArea[pi] - (int16) pixelKArea[k*(k*2+1) + k]);
+                                ASSERT(difference < 256);
+                                if(ABS(difference) >= markIntensityDifferenceThreshold || (lastCluster && pixelKArea[pi] >= clusterMinimum)){
+                                    members++;
+                                }
+                            }
+                            
+                            if(members > clusterMembershipQuorum*(2*k+1)*(2*k+1)){
+                                currentAverage += 1;
+                                averageIntensity += bitmap.data[y*bitmap.info.width + x];
+                                //bitmap.data[y * bitmap.info.width + x] = 255;
+                            }else{
+                                //bitmap.data[y * bitmap.info.width + x] = 0;
+                            }
+                        }else{
+                            //bitmap.data[y * bitmap.info.width + x] = 0;
+                        }
+                        
+                    }
+                    
+                    if(currentAverage > clusterWidthQuorum * colW){
+                        
+                        if(!lastCluster){
+                            mark.startY = y;
+                            clusterMinimum = averageIntensity / currentAverage;
+                        }
+                        lastCluster = true;
+                        /*for(uint32 x = 0; x < colW; x++){
+                            bitmap.data[y*bitmap.info.width + x] = 100;
+                        }*/
+                    }else{
+                        if(lastCluster){
+                            mark.endY = y;
+                            markIndex++;
+                        }
+                        lastCluster = false;
+                        
+                    }
+                    if(markIndex == parameters->targetMark){
+                        break;
+                    }
+                }
+                ASSERT(markIndex == parameters->targetMark);
+                
+                markOffset = fontSize * strlen(parameters->markText);
+                
+                scaleCanvas(&bitmap, bitmap.info.width + markOffset, bitmap.info.height, markOffset, 0);
+                
+                printToBitmap(&bitmap, 0, mark.startY, parameters->markText, &font, fontSize);
+            }
+            /*
+            FileContents bmp2;
+            encodeBMP(&bitmap, &bmp2);
+            saveFile("bmp.bmp", &bmp2);
+            return;
+            */
+            
+            
+            
+            if(parameters->labelsCount != 0){
+                scaleCanvas(&bitmap, bitmap.info.width, bitmap.info.height + colW, 0, 0);
+                char stamp[2];
+                stamp[1] = '\0';
+                uint8 symbolIndex = parameters->beginningSymbolIndex;
+                for(uint8 ci = 1; ci < parameters->columns; ci++){
+                    stamp[0] = parameters->labels[symbolIndex];
+                    printToBitmap(&bitmap, markOffset + ci*colW + (uint32)((bordersX/2)*bitmap.info.width), bitmap.info.height - colW, stamp , &font, colW);
+                    symbolIndex = (symbolIndex + 1) % parameters->labelsCount;
+                }
             }
             
-            if(currentAverage > clusterWidthQuorum * colW){
-                
-                if(!lastCluster){
-                    mark.startY = y;
-                    clusterMinimum = averageIntensity / currentAverage;
-                }
-                lastCluster = true;
-                /*for(uint32 x = 0; x < colW; x++){
-                    bitmap.data[y*bitmap.info.width + x] = 100;
-                }*/
-            }else{
-                if(lastCluster){
-                    mark.endY = y;
-                    markIndex++;
-                }
-                lastCluster = false;
-                
-            }
-            if(markIndex == parameters->targetMark){
-                break;
-            }
         }
-        /*
-        FileContents bmp2;
-        encodeBMP(&bitmap, &bmp2);
-        saveFile("bmp.bmp", &bmp2);
-        return;
-        */
-        FileContents fontFile;
-        BitmapFont font;
-        readFile("font.bmp", &fontFile);
-        Image source;
-        decodeBMP(&fontFile, &source);
-        flipY(&source);
-        initBitmapFont(&font, &source, source.info.width / 16); 
-        
-        ASSERT(markIndex == parameters->targetMark);
-        
-        const char * message = "FUCK";
-        
-        uint32 fontSize = 24;
-        
-        scaleCanvas(&bitmap, bitmap.info.width + fontSize * strlen(message), bitmap.info.height + colW, fontSize * strlen(message), 0);
-        
-        printToBitmap(&bitmap, 0, mark.startY, message, &font, fontSize);
-        
-        
-        for(uint8 ci = 1; ci < parameters->columns; ci++){
-            printToBitmap(&bitmap, fontSize * strlen(message) + ci*colW + (uint32)((bordersX/2)*bitmap.info.width), bitmap.info.height - colW,  "A", &font, colW);
-        }
-        
-        
-        
         
         
         FileContents tiff;
