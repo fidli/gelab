@@ -30,6 +30,15 @@
         uint32 streak;
     };
     
+    void moveImageBlockUp(Image * target, uint32 fromY, uint32 toY, uint32 howMuch){
+        ASSERT(target->info.bitsPerSample * target->info.samplesPerPixel == 8);
+        for(uint32 h = 0; h < howMuch; h++){
+            for(uint32 w = 0; w < target->info.height; w++){
+                target->data[(toY + h) * target->info.width + w] = target->data[(fromY + h) * target->info.width + w];
+            }
+        }
+    }
+    
     void run(RunParameters * parameters){
         FileContents imageFile;
         readFile(parameters->inputfile, &imageFile);
@@ -231,6 +240,7 @@
         //find middle
         
         
+        
         ASSERT(bitmap.info.origin == BitmapOriginType_TopLeft);
         ASSERT(bitmap.info.interpretation = BitmapInterpretationType_GrayscaleBW01);
         PUSHI;
@@ -294,7 +304,7 @@
         }
         */
         
-        uint8 bottomFindingGradientThreshold = 5;
+        uint8 bottomFindingGradientThreshold = 0;
         
         for(uint32 x = 1; x < bitmap.info.width - 1; x = x + tileW){
             for(uint32 y = 1; y < bitmap.info.height - 1; y = y + tileH){
@@ -360,6 +370,43 @@
         
         
         ASSERT(candidateCount > 0);
+        
+        /*
+        uint32 * candidateIndex = &PUSHA(uint32, parameters->blocksCount);
+        bool * found =  &PUSHA(bool, parameters->blocksCount);
+        
+        float32 margin = 0.1 * ((parameters->blocksCount > 2)? (1.0 / powd(2, parameters->blocksCount-2)) : 1);
+        
+        for(uint8 cropIndex = 0; cropIndex < parameters->blocksCount; cropIndex++){
+            found[cropIndex] = false;
+            candidateIndex[cropIndex] = 0;
+            if(!parameters->dontInput[cropIndex]){
+                float32 borderline = (float32)(cropIndex + 1) / (float32)parameters->blocksCount;
+                for(uint32 ci = 0; ci < candidateCount; ci++){
+                    if(candidates[ci] > (borderline - margin) * bitmap.info.height &&
+                       candidates[ci] < (borderline + margin) * bitmap.info.height &&
+                       (!found[cropIndex] ||
+                        candidateAverages[ci] < candidateAverages[candidateIndex[cropIndex]])
+                       ){
+                       
+                        candidateIndex[cropIndex] = ci;
+                        found[cropIndex] = true;
+                        
+                    }
+                    
+                }
+                
+                ASSERT(found[cropIndex]);
+                cropImageY(&bitmap, candidates[candidateIndex[cropIndex]], 0);
+                
+            }
+        }
+        
+        
+        
+        */
+        
+        
         uint32 candidateIndex = 0;
         bool found = false;
         
@@ -377,8 +424,17 @@
         
         ASSERT(found);
         
-        cropImageY(&bitmap, candidates[candidateIndex], 0);
+        uint32 blockHeight = candidates[candidateIndex];
+        uint8 totalBlocks = 0;
         
+        for(uint8 cropIndex = 0; cropIndex < parameters->blocksCount; cropIndex++){
+            if(!parameters->dontInput[cropIndex]){
+                moveImageBlockUp(&bitmap, (uint32)(((float32)cropIndex / parameters->blocksCount)*bitmap.info.height), totalBlocks * blockHeight, blockHeight);
+                totalBlocks++;
+            }
+        }
+        
+        bitmap.info.height = totalBlocks*blockHeight;
         
         //we are going to print
         if(parameters->labelsCount != 0 || !parameters->dontMark){
@@ -426,7 +482,8 @@
                 
                 
                 //finding the left side mark
-                int16 markIndex = 0;
+                int16 markIndex = -1;
+                
                 
                 for(uint32 y = (k + (uint32)(topBorder*bitmap.info.height)); y < bitmap.info.height - k; y++){
                     currentAverage = 0;
@@ -473,7 +530,7 @@
                         }
                         lastCluster = true;
                         /*for(uint32 x = 0; x < colW; x++){
-                            bitmap.data[y*bitmap.info.width + x] = 100;
+                        bitmap.data[y*bitmap.info.width + x] = 100;
                         }*/
                     }else{
                         if(lastCluster){
@@ -518,6 +575,12 @@
             
         }
         
+        
+        if(parameters->invertColors){
+            for(uint32 i = 0; i < bitmap.info.width * bitmap.info.height * bitmap.info.bitsPerSample * bitmap.info.samplesPerPixel; i++){
+                bitmap.data[i] = 255 - bitmap.data[i]; 
+            }
+        }
         
         FileContents tiff;
         encodeBMP(&bitmap, &tiff);

@@ -85,11 +85,11 @@
 #include "domaincode.cpp"
     
     static inline void printHelp(const char * binaryName){
-        printf("\nUsage: %s inputfile [-b num_of_blocks] [-m order \"text\"] [-l list beginning_symbol_index -n total_column_count] [-i list] [-IM] outputfile\n\n", binaryName);
+        printf("\nUsage: %s inputfile [-b num_of_blocks] [-m \"text\" order] [-l list beginning_symbol_index -n total_column_count] [-i list] [-IM] outputfile\n\n", binaryName);
         printf(" inputfile\n  - original TIFF file from experiment\n\n");
         printf(" -b num_of_blocks\n  - valid range [1, 50]\n  - how many experiments are in inputfile - default: 1\n\n"); 
         
-        printf(" -m order \"text\"\n  - valid 'order' range [1, 255]\n  - find mark on place 'order' and put 'text' next to it, mark wont be added, if this is not set\n\n");
+        printf(" -m \"text\" order\n  - valid 'order' range [1, 255]\n  - find mark on place 'order' and put 'text' next to it, mark wont be added, if this is not set\n\n");
         printf(" -l list beginning_symbol_index\n  - valid 'beginning_symbol_range' range [1, 50]\n  - 'list' are ASCII characters (one letter) labeling experiment columns in cycle starting at 'beginning_symbol_index', requires -n to be set too, columns wont be market if this is not set\n\n");
         printf(" -n total_column_count\n  - valid range [1, 255]\n  - sets the total column count that the experiment has\n\n");
         
@@ -180,7 +180,7 @@
                             }break;
                             case 'm':{
                                 int16 mark;
-                                if(i == argc - 3 || sscanf(argv[i+1], "%hd", &mark) != 1 || sscanf(argv[i+2], "%256%256s", parameters->markText) != 1){
+                                if(i == argc - 3 || sscanf(argv[i+2], "%hd", &mark) != 1 || sscanf(argv[i+1], "%256%256s", parameters->markText) != 1){
                                     printf("Error: Invalid parameter -m\n");
                                     valid = false;
                                     break;
