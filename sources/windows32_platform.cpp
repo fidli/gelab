@@ -80,9 +80,99 @@
         return result;
     }
     
+    struct DrawContext{
+        uint32 * drawbuffer;
+        BITMAPINFO drawinfo;
+        HDC  backbufferDC;
+        HBITMAP DIBSection;
+        uint32 width;
+        uint32 height;
+    };
     
+    
+    
+    struct Context{
+        HINSTANCE hInstance;
+        HWND window;
+        bool quit;
+    };
+    
+    
+    Context context;
+    
+    
+    DrawContext renderer;
     
 #include "domaincode.cpp"
+    
+    
+    void resizeCanvas(HWND window, LONG width, LONG height){
+        if(renderer.DIBSection){
+            DeleteObject(renderer.DIBSection);
+        }else{
+            
+            renderer.backbufferDC = CreateCompatibleDC(NULL);
+        }
+        
+        renderer.drawinfo = {{
+                sizeof(BITMAPINFOHEADER),
+                width,
+                -height,
+                1,
+                32,
+                BI_RGB,
+                0,
+                0,
+                0,
+                0,
+                0},
+            0
+        };
+        renderer.DIBSection = CreateDIBSection(renderer.backbufferDC, &renderer.drawinfo, DIB_RGB_COLORS, (void**) &renderer.drawbuffer, NULL, NULL);
+        renderer.height = height;
+        renderer.width = width;
+        
+    }
+    
+    void updateCanvas(HDC dc, int x, int y, int width, int height){
+        StretchDIBits(dc, x, y, width, height, 0, 0, width, height, renderer.drawbuffer, &renderer.drawinfo, DIB_RGB_COLORS, SRCCOPY);
+    }
+    
+    LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam){
+        switch(message)
+        {
+            case WM_SIZE:{
+                resizeCanvas(context.window, (WORD)lParam, (WORD) (lParam >> sizeof(WORD) * 8));
+            }
+            break;
+            case WM_PAINT:{
+                PAINTSTRUCT paint;
+                HDC dc = BeginPaint(window, &paint);
+                int x = paint.rcPaint.left;
+                int y = paint.rcPaint.top;
+                int width = paint.rcPaint.right - paint.rcPaint.left;
+                int height = paint.rcPaint.bottom - paint.rcPaint.top;
+                
+                updateCanvas(dc, x, y, width, height);
+                
+                EndPaint(context.window, &paint);
+            }
+            break;
+            case WM_CLOSE:
+            case WM_DESTROY:
+            {
+                context.quit = true;
+                return 0;
+            } break;
+        }
+        
+        return DefWindowProc (window, message, wParam, lParam);
+    }
+    
+    
+    
+    
+    
     
     static inline void printHelp(const char * binaryName){
         printf("\nUsage: %s inputfile [-b num_of_blocks] [-m \"text\" order] [-l list beginning_symbol_index -n total_column_count] [-i list] [-IM] outputfile\n\n", binaryName);
@@ -101,6 +191,7 @@
         printf(" outputfile\n  - where to save the ouput to. THIS FILE WILL BE OVERWRITTEN\n"); 
         
     }
+    
     
     static inline int main(LPWSTR * argvW, int argc) {
         
@@ -137,18 +228,13 @@
             parameters->labelsCount = 0;
             parameters->targetMark = 0;
             parameters->columns = 0;
+            parameters->isManual = false;
             for(int32 i = 0; i < ARRAYSIZE(parameters->dontInput); i++){
                 parameters->dontInput[i] = false;
             }
             if(argc == 1){
                 printHelp(argv[0]);
-                /*
-                strcpy(parameters->inputfile, "data/160907_gel1.tif");
-                strcpy(parameters->outputfile, "crea.tif");
-                parameters->columns = 24;
-                parameters->targetMark = 5;
-                run(parameters);
-                */
+                
             }else{
                 bool valid = true;
                 uint8 highestBlockList = 0;
@@ -280,7 +366,7 @@
                                 parameters->invertColors = false;
                             }break;
                             case 'M':{
-                                //manual crop
+                                parameters->isManual = true;
                             }break;
                             default:{
                                 valid = false;
@@ -308,7 +394,54 @@
                     printf("Error: Invalid arguments, see usage.\n");
                     printHelp(argv[0]);
                 }else{
-                    run(parameters);
+                    
+                    if(parameters->isManual){
+                        WNDCLASSEX style = {};
+                        style.cbSize = sizeof(WNDCLASSEX);
+                        style.style = CS_OWNDC;
+                        style.lpfnWndProc = WindowProc;
+                        style.hInstance = context.hInstance;
+                        style.lpszClassName = "MainClass";
+                        if(RegisterClassEx(&style) != 0){
+                            context.window = CreateWindowEx(NULL,
+                                                            "MainClass", "GeLab manual crop | gelab.fidli.eu", WS_OVERLAPPEDWINDOW | WS_SIZEBOX,
+                                                            CW_USEDEFAULT, CW_USEDEFAULT,CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, context.hInstance, NULL);
+                            
+                            if(context.window){
+                                ShowWindow(context.window, SW_SHOWMAXIMIZED);
+                                
+                                while (!context.quit) {
+                                    
+                                    MSG msg;
+                                    while(PeekMessage(&msg, context.window, 0, 0, PM_REMOVE))
+                                    {
+                                        TranslateMessage(&msg);
+                                        DispatchMessage(&msg);
+                                    }
+                                    
+                                    run(parameters);
+                                    
+                                    
+                                    InvalidateRect(context.window, NULL, TRUE);                       
+                                }
+                                
+                                
+                                
+                                
+                                
+                                
+                            }else{
+                                //log
+                                ASSERT(!"failed to create window");
+                            }
+                            
+                            UnregisterClass("MainClass", context.hInstance);
+                        }
+                        
+                    }else{
+                        
+                        run(parameters);
+                    }
                 }
             }
             
@@ -336,7 +469,9 @@
         SetProcessDEPPolicy(PROCESS_DEP_ENABLE);
         int argc = 0;
         LPWSTR * argv =  CommandLineToArgvW(GetCommandLineW(), &argc);
-        
+        context.hInstance = GetModuleHandle(NULL);
+        context.quit = false;
+        programContext.state = ProgramState_Init;
         int result = main(argv,argc);
         LocalFree(argv);
         ExitProcess(result);
