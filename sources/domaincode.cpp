@@ -509,9 +509,12 @@
             }
             programContext.state = ProgramState_SelectMarks;
         }
+        BitmapFont font;
         
-        FileContents fontFile;
+        uint32 colW;
+        uint32 markOffset;
         
+        float32 bordersX;
         if(!parameters->isManual || programContext.state == ProgramState_SelectMarks){
             
             if(parameters->isManual){
@@ -524,21 +527,24 @@
                 if(parameters->labelsCount != 0 || !parameters->dontMark){
                     
                     
-                    BitmapFont font;
+                    FileContents fontFile;
                     readFile("font.bmp", &fontFile);
                     Image source;
                     decodeBMP(&fontFile, &source);
                     flipY(&source);
                     initBitmapFont(&font, &source, source.info.width / 16); 
                     uint32 fontSize = 24;
-                    uint32 markOffset = 0;
                     
-                    float32 bordersX = 0.03f;
+                    
+                    markOffset = 0;
+                    
+                    bordersX = 0.03f;
+                    
                     float32 topBorder = 0.1f;
                     
                     
                     
-                    uint32 colW = (uint32)(programContext.bitmap.info.width * (1-bordersX)) / (parameters->columns == 0 ? 20 : parameters->columns);
+                    colW = (uint32)(programContext.bitmap.info.width * (1-bordersX)) / (parameters->columns == 0 ? 20 : parameters->columns);
                     
                     
                     if(!parameters->dontMark){
