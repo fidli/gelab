@@ -1,5 +1,6 @@
     #include "util_filesystem.h"
 #include "util_font.cpp"
+#include "util_math.cpp"
     
     enum ProgramState{
         ProgramState_Init,
@@ -13,6 +14,9 @@
     struct ProgramContext{
         ProgramState state;
         Image bitmap;
+        dv2 mouse;
+        dv2 points[4];
+        uint8 pointsCount;
     };
     
     
@@ -73,7 +77,7 @@
                 draw.info = programContext.bitmap.info;
                 draw.info.samplesPerPixel = 4;
                 tmp.info = draw.info;
-                tmp.data = (byte *) &PUSHA(uint32, draw.info.width * draw.info.height);
+                tmp.data = (byte *) &PPUSHA(uint32, draw.info.width * draw.info.height);
                 draw.data = (byte *) &PPUSHA(uint32, draw.info.width * draw.info.height);
                 for(uint32 i = 0; i < programContext.bitmap.info.width * programContext.bitmap.info.width; i++){
                     for(uint8 j = 0; j < 3; j++){
@@ -83,8 +87,8 @@
                     
                 }
                 scaleImage(&tmp, &draw, renderer.width, renderer.height);
-                renderer.drawbuffer = (uint32 *) draw.data;
-                POP;
+                renderer.drawBitmapData = draw;
+                renderer.originalBitmapData = tmp;
             }
             
             programContext.state = ProgramState_SelectCorners;

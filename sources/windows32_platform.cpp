@@ -82,6 +82,8 @@
     
     struct DrawContext{
         uint32 * drawbuffer;
+        Image drawBitmapData;
+        Image originalBitmapData;
         BITMAPINFO drawinfo;
         HDC  backbufferDC;
         HBITMAP DIBSection;
@@ -95,6 +97,8 @@
         HINSTANCE hInstance;
         HWND window;
         bool quit;
+        bool mouseOut;
+        
     };
     
     
@@ -129,8 +133,12 @@
             0
         };
         renderer.DIBSection = CreateDIBSection(renderer.backbufferDC, &renderer.drawinfo, DIB_RGB_COLORS, (void**) &renderer.drawbuffer, NULL, NULL);
+        
         renderer.height = height;
         renderer.width = width;
+        if(programContext.bitmap.data != NULL){
+            scaleImage(&renderer.originalBitmapData, &renderer.drawBitmapData, renderer.width, renderer.height);
+        }
         
     }
     
@@ -145,6 +153,29 @@
                 resizeCanvas(context.window, (WORD)lParam, (WORD) (lParam >> sizeof(WORD) * 8));
             }
             break;
+            case WM_NCMOUSEMOVE:{
+                context.mouseOut = true;
+                
+                return 0;
+            }break;
+            case WM_MOUSEMOVE:{
+                
+                uint16 x = (WORD) lParam;
+                uint16 y = (WORD) (lParam >> 16);
+                
+                context.mouseOut = false;
+                
+                
+                programContext.mouse.x = x;
+                programContext.mouse.y = y;
+                return 0;
+            }break;
+            case WM_LBUTTONUP:{
+                uint16 x = (WORD) lParam;
+                uint16 y = (WORD) (lParam >> 16);
+                
+                return 0;
+            }break;
             case WM_PAINT:{
                 PAINTSTRUCT paint;
                 HDC dc = BeginPaint(window, &paint);
@@ -409,6 +440,7 @@
                             
                             if(context.window){
                                 ShowWindow(context.window, SW_SHOWMAXIMIZED);
+                                HCURSOR cursor = (HCURSOR) LoadImage(context.hInstance, IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
                                 
                                 while (!context.quit) {
                                     
@@ -419,9 +451,53 @@
                                         DispatchMessage(&msg);
                                     }
                                     
+                                    
+                                    
+                                    if(context.mouseOut){
+                                        if(GetCursor() == NULL){
+                                            cursor = SetCursor(cursor);
+                                        }
+                                    }else{
+                                        if(GetCursor() != NULL){
+                                            cursor = SetCursor(NULL);
+                                        }
+                                    }
+                                    
+                                    
                                     run(parameters);
+                                    programContext.pointsCount = 1;
+                                    programContext.points[0].x = 390;
+                                    programContext.points[0].y = 151;
                                     
-                                    
+                                    uint32 minY = MIN(programContext.points[0].y, programContext.mouse.y);
+                                    uint32 maxY = programContext.mouse.y == minY ? programContext.points[0].y : programContext.mouse.y;
+                                    uint32 minX = MIN(programContext.points[0].x, programContext.mouse.x);
+                                    uint32 maxX = programContext.mouse.x == minX ? programContext.points[0].x : programContext.mouse.x;
+                                    /**
+                            draw basic image
+                            */
+                                    for(uint32 h = 0; h < renderer.height; h++){
+                                        uint32 pitch = h*renderer.width;
+                                        
+                                        for(uint32 w = 0; w < renderer.width; w++){
+                                            
+                                            if(h == programContext.mouse.y || w == programContext.mouse.x){
+                                                renderer.drawbuffer[pitch + w] = 0x0000FF00;
+                                            }
+                                            else{
+                                                if(programContext.pointsCount == 0){
+                                                    renderer.drawbuffer[pitch + w] = ((uint32 *)renderer.drawBitmapData.data)[pitch + w];
+                                                }else if(programContext.pointsCount >= 1){
+                                                    if(w >= minX && w <= maxX && h >= minY && h <= maxY){
+                                                        
+                                                    }else{
+                                                        renderer.drawbuffer[pitch + w] = ((uint32 *)renderer.drawBitmapData.data)[pitch + w];
+                                                    }
+                                                }
+                                                
+                                            }
+                                        }
+                                    }
                                     InvalidateRect(context.window, NULL, TRUE);                       
                                 }
                                 
@@ -471,7 +547,9 @@
         LPWSTR * argv =  CommandLineToArgvW(GetCommandLineW(), &argc);
         context.hInstance = GetModuleHandle(NULL);
         context.quit = false;
+        renderer.drawBitmapData = {};
         programContext.state = ProgramState_Init;
+        programContext.pointsCount = 0;
         int result = main(argv,argc);
         LocalFree(argv);
         ExitProcess(result);
