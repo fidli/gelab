@@ -173,7 +173,20 @@
             case WM_LBUTTONUP:{
                 uint16 x = (WORD) lParam;
                 uint16 y = (WORD) (lParam >> 16);
-                
+                programContext.input.click = true;
+                programContext.mouse.x = x;
+                programContext.mouse.y = y;
+                return 0;
+            }break;
+            case WM_KEYUP:{
+                switch(wParam){
+                    case VK_BACK:
+                    case VK_ESCAPE:{
+                        programContext.input.back = true;
+                    }break;
+                    default:{
+                    }break;
+                };
                 return 0;
             }break;
             case WM_PAINT:{
@@ -221,6 +234,44 @@
         
         printf(" outputfile\n  - where to save the ouput to. THIS FILE WILL BE OVERWRITTEN\n"); 
         
+    }
+    
+    static inline void drawLine(dv2 * from, dv2 * to){
+        
+        uint32 minY = MIN(from->y, to->y);
+        uint32 maxY = from->y == minY ? to->y : from->y;
+        uint32 minX = MIN(from->x, to->x);
+        uint32 maxX = from->x == minX ? to->x : from->x;
+        
+        bool vertical = minX == maxX;
+        
+        float32 k;
+        float32 q;
+        
+        if(!vertical){
+            k = (float32)((int32)from->y - (int32)to->y)/((int32)from->x - (int32)to->x);
+            q = (int32)to->y - k*(int32)to->x;
+        }
+        
+        for(uint32 h = 0; h < renderer.height; h++){
+            uint32 pitch = h*renderer.width;
+            
+            for(uint32 w = 0; w < renderer.width; w++){
+                
+                if(w >= minX && w <= maxX && h >= minY && h <= maxY){
+                    if(vertical){
+                        renderer.drawbuffer[pitch + w] = 0x00FF0000;
+                    }else{
+                        uint32 linepoint = (int32)(k*w + q);
+                        if(linepoint == h || linepoint == h+1 || linepoint == h-1){
+                            renderer.drawbuffer[pitch + w] = 0x00FF0000;
+                        }
+                        
+                        
+                    }
+                }
+            }
+        }
     }
     
     
@@ -444,6 +495,8 @@
                                 
                                 while (!context.quit) {
                                     
+                                    programContext.input = {};
+                                    
                                     MSG msg;
                                     while(PeekMessage(&msg, context.window, 0, 0, PM_REMOVE))
                                     {
@@ -451,7 +504,18 @@
                                         DispatchMessage(&msg);
                                     }
                                     
-                                    
+                                    if(programContext.pointsCount == 2 && programContext.state == ProgramState_SelectCorners){
+                                        dv2 lineVec = programContext.points[1] - programContext.points[0];
+                                        dv2 perpVec = {-lineVec.y, lineVec.x};
+                                        v2 unitPerpVec = normalize(perpVec);
+                                        float32 coef = dot({(float32)programContext.mouse.x - programContext.points[0].x, (float32)programContext.mouse.y - programContext.points[0].y}, unitPerpVec);
+                                        v2 perpWorld = coef * unitPerpVec;
+                                        dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
+                                        dv2 projcast2 = projcast1 + programContext.points[1];
+                                        projcast1 += programContext.points[0];
+                                        programContext.line[0] = projcast1;
+                                        programContext.line[1] = projcast2;
+                                    }
                                     
                                     if(context.mouseOut){
                                         if(GetCursor() == NULL){
@@ -465,14 +529,10 @@
                                     
                                     
                                     run(parameters);
-                                    programContext.pointsCount = 1;
-                                    programContext.points[0].x = 390;
-                                    programContext.points[0].y = 151;
                                     
-                                    uint32 minY = MIN(programContext.points[0].y, programContext.mouse.y);
-                                    uint32 maxY = programContext.mouse.y == minY ? programContext.points[0].y : programContext.mouse.y;
-                                    uint32 minX = MIN(programContext.points[0].x, programContext.mouse.x);
-                                    uint32 maxX = programContext.mouse.x == minX ? programContext.points[0].x : programContext.mouse.x;
+                                    
+                                    
+                                    
                                     /**
                             draw basic image
                             */
@@ -481,23 +541,28 @@
                                         
                                         for(uint32 w = 0; w < renderer.width; w++){
                                             
-                                            if(h == programContext.mouse.y || w == programContext.mouse.x){
+                                            if(programContext.pointsCount <= 1 &&(h == programContext.mouse.y || w == programContext.mouse.x)){
                                                 renderer.drawbuffer[pitch + w] = 0x0000FF00;
                                             }
                                             else{
-                                                if(programContext.pointsCount == 0){
-                                                    renderer.drawbuffer[pitch + w] = ((uint32 *)renderer.drawBitmapData.data)[pitch + w];
-                                                }else if(programContext.pointsCount >= 1){
-                                                    if(w >= minX && w <= maxX && h >= minY && h <= maxY){
-                                                        
-                                                    }else{
-                                                        renderer.drawbuffer[pitch + w] = ((uint32 *)renderer.drawBitmapData.data)[pitch + w];
-                                                    }
-                                                }
+                                                renderer.drawbuffer[pitch + w] = ((uint32 *)renderer.drawBitmapData.data)[pitch + w];
                                                 
                                             }
                                         }
                                     }
+                                    
+                                    if(programContext.pointsCount  == 1){
+                                        drawLine(&programContext.points[0], &programContext.mouse);
+                                    }else if(programContext.pointsCount == 2){
+                                        drawLine(&programContext.points[0], &programContext.points[1]);
+                                        
+                                        drawLine(&programContext.points[0], &programContext.line[0]);
+                                        drawLine(&programContext.points[1], &programContext.line[1]);
+                                        drawLine(&programContext.line[0], &programContext.line[1]);
+                                        
+                                        
+                                    }
+                                    
                                     InvalidateRect(context.window, NULL, TRUE);                       
                                 }
                                 
@@ -550,6 +615,7 @@
         renderer.drawBitmapData = {};
         programContext.state = ProgramState_Init;
         programContext.pointsCount = 0;
+        programContext.input = {};
         int result = main(argv,argc);
         LocalFree(argv);
         ExitProcess(result);

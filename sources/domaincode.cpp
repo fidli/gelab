@@ -11,12 +11,20 @@
     };
     
     
+    struct UserInput{
+        bool click;
+        bool back;
+    };
+    
+    
     struct ProgramContext{
         ProgramState state;
         Image bitmap;
         dv2 mouse;
+        dv2 line[2];
         dv2 points[4];
         uint8 pointsCount;
+        UserInput input;
     };
     
     
@@ -63,6 +71,7 @@
     }
     
     void run(RunParameters * parameters){
+        
         if(!parameters->isManual || programContext.state == ProgramState_Init){
             FileContents imageFile;
             readFile(parameters->inputfile, &imageFile);
@@ -95,6 +104,8 @@
             
         }
         
+        
+        
         uint8 thresholdX = 20;
         uint8 thresholdY = 4;
         int32 wj = programContext.bitmap.info.width / 10;
@@ -102,6 +113,28 @@
         if(!parameters->isManual || programContext.state == ProgramState_SelectCorners){
             
             if(parameters->isManual){
+                if(programContext.pointsCount == 0){
+                    if(programContext.input.click == true){
+                        programContext.points[programContext.pointsCount++] = programContext.mouse;
+                    }
+                    if(programContext.input.back == true){
+                        context.quit = true;
+                    }
+                }else if(programContext.pointsCount == 1){
+                    if(programContext.input.click == true){
+                        programContext.points[programContext.pointsCount++] = programContext.mouse;
+                    }
+                    if(programContext.input.back == true){
+                        programContext.pointsCount--;
+                    }
+                }else if(programContext.pointsCount == 2){
+                    if(programContext.input.click == true){
+                        programContext.state = ProgramState_SelectHalf;
+                    }
+                    if(programContext.input.back == true){
+                        programContext.pointsCount--;
+                    }
+                }
                 
             }else{
                 
@@ -296,9 +329,10 @@
                     
                     
                 }
+                programContext.state = ProgramState_SelectHalf;
             }
             
-            programContext.state = ProgramState_SelectHalf;
+            
             
         }
         
