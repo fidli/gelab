@@ -1,6 +1,7 @@
     #include "util_filesystem.h"
 #include "util_font.cpp"
 #include "util_math.cpp"
+#include "util_sort.cpp"
     
     enum ProgramState{
         ProgramState_Init,
@@ -129,7 +130,32 @@
                     }
                 }else if(programContext.pointsCount == 2){
                     if(programContext.input.click == true){
+                        programContext.points[2] = programContext.line[0];
+                        programContext.points[3] = programContext.line[1];
                         programContext.state = ProgramState_SelectHalf;
+                        programContext.pointsCount = 4;
+                        //sort stable by left top corner to right bot corner
+                        insertSort((byte *) programContext.points, sizeof(programContext.points[0]), ARRAYSIZE(programContext.points), [](void * a, void *b) -> int8{
+                                   int32 x1 = ((dv2 *) a)->x;
+                                   int32 x2 = ((dv2 *) b)->x;
+                                   if(x1 > x2){
+                                   return 1;
+                                   }else if(x1 < x2){
+                                   return -1;
+                                   }
+                                   return 0
+                                   ;});
+                        insertSort((byte *) programContext.points, sizeof(programContext.points[0]), ARRAYSIZE(programContext.points), [](void * a, void *b) -> int8{
+                                   int32 y1 = ((dv2 *) a)->y;
+                                   int32 y2 = ((dv2 *) b)->y;
+                                   if(y1 > y2){
+                                   return 1;
+                                   }else if(y1 < y2){
+                                   return -1;
+                                   }
+                                   return 0
+                                   ;});
+                        return;
                     }
                     if(programContext.input.back == true){
                         programContext.pointsCount--;
@@ -341,7 +367,13 @@
         if(!parameters->isManual || programContext.state == ProgramState_SelectHalf){
             
             if(parameters->isManual){
-                
+                if(programContext.input.back == true){
+                    programContext.pointsCount = 2;
+                    programContext.state = ProgramState_SelectCorners;
+                }
+                if(programContext.input.click == true){
+                    programContext.state = ProgramState_SelectMarks;
+                }
             }else{
                 
                 
@@ -544,8 +576,9 @@
                 }
                 
                 programContext.bitmap.info.height = totalBlocks*blockHeight;
+                programContext.state = ProgramState_SelectMarks;
             }
-            programContext.state = ProgramState_SelectMarks;
+            
         }
         BitmapFont font;
         

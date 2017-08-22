@@ -253,22 +253,22 @@
             q = (int32)to->y - k*(int32)to->x;
         }
         
-        for(uint32 h = 0; h < renderer.height; h++){
+        for(uint32 h = minY; h < renderer.height && h < maxY; h++){
             uint32 pitch = h*renderer.width;
             
-            for(uint32 w = 0; w < renderer.width; w++){
+            for(uint32 w = minX; w < renderer.width && w < maxX; w++){
                 
-                if(w >= minX && w <= maxX && h >= minY && h <= maxY){
-                    if(vertical){
+                
+                if(vertical){
+                    renderer.drawbuffer[pitch + w] = 0x00FF0000;
+                }else{
+                    uint32 linepoint = (int32)(k*w + q);
+                    if( h <= linepoint + 3 && h >= linepoint - 3){
                         renderer.drawbuffer[pitch + w] = 0x00FF0000;
-                    }else{
-                        uint32 linepoint = (int32)(k*w + q);
-                        if(linepoint == h || linepoint == h+1 || linepoint == h-1){
-                            renderer.drawbuffer[pitch + w] = 0x00FF0000;
-                        }
-                        
-                        
                     }
+                    
+                    
+                    
                 }
             }
         }
@@ -517,6 +517,10 @@
                                         programContext.line[1] = projcast2;
                                     }
                                     
+                                    if(programContext.state == ProgramState_SelectHalf){
+                                        
+                                    }
+                                    
                                     if(context.mouseOut){
                                         if(GetCursor() == NULL){
                                             cursor = SetCursor(cursor);
@@ -534,8 +538,8 @@
                                     
                                     
                                     /**
-                            draw basic image
-                            */
+                                    draw basic image
+                                    */
                                     for(uint32 h = 0; h < renderer.height; h++){
                                         uint32 pitch = h*renderer.width;
                                         
@@ -559,6 +563,14 @@
                                         drawLine(&programContext.points[0], &programContext.line[0]);
                                         drawLine(&programContext.points[1], &programContext.line[1]);
                                         drawLine(&programContext.line[0], &programContext.line[1]);
+                                        
+                                        
+                                    }else if(programContext.pointsCount == 4){
+                                        //top left to bot right...
+                                        drawLine(&programContext.points[0], &programContext.points[1]);
+                                        drawLine(&programContext.points[1], &programContext.points[3]);
+                                        drawLine(&programContext.points[3], &programContext.points[2]);
+                                        drawLine(&programContext.points[2], &programContext.points[0]);
                                         
                                         
                                     }
