@@ -28,6 +28,8 @@
         dv2 half[2];
         uint8 pointsCount;
         UserInput input;
+        v2 rotation;
+        v2 rotationCenter;
     };
     
     
@@ -77,11 +79,30 @@
         
         if(!parameters->isManual || programContext.state == ProgramState_Init){
             FileContents imageFile;
-            readFile(parameters->inputfile, &imageFile);
             
-            decodeTiff(&imageFile, &programContext.bitmap);
+            bool result = readFile(parameters->inputfile, &imageFile);
+            ASSERT(result);
+            if(result == false){
+                printf("Error: failed to read file contents\n");
+                context.quit = true;
+                return;
+            }
+            result = decodeTiff(&imageFile, &programContext.bitmap);
+            ASSERT(result);
+            if(result == false){
+                printf("Error: failed to decode tiff file\n");
+                context.quit = true;
+                return;
+            }
             
             ASSERT(programContext.bitmap.info.bitsPerSample * programContext.bitmap.info.samplesPerPixel == 8);
+            if(programContext.bitmap.info.bitsPerSample * programContext.bitmap.info.samplesPerPixel != 8 || programContext.bitmap.info.interpretation != BitmapInterpretationType_GrayscaleBW01){
+                printf("Error: invalid image format (is not grayscale?)\n");
+                context.quit = true;
+                return;
+            }
+            
+            
             
             if(parameters->isManual){
                 Image draw;
@@ -98,7 +119,12 @@
                     
                     
                 }
-                scaleImage(&tmp, &draw, renderer.width, renderer.height);
+                result = scaleImage(&tmp, &draw, renderer.width, renderer.height);
+                ASSERT(result);
+                if(result == false){
+                    printf("Error: failed to decode tiff file\n");
+                    context.quit = true;
+                }
                 renderer.drawBitmapData = draw;
                 renderer.originalBitmapData = tmp;
             }
@@ -114,7 +140,7 @@
         int32 wj = programContext.bitmap.info.width / 10;
         
         if(!parameters->isManual || programContext.state == ProgramState_SelectCorners){
-            
+            bool step = false;
             if(parameters->isManual){
                 if(programContext.pointsCount == 0){
                     if(programContext.input.click == true){
@@ -134,7 +160,7 @@
                     if(programContext.input.click == true){
                         programContext.points[2] = programContext.line[0];
                         programContext.points[3] = programContext.line[1];
-                        programContext.state = ProgramState_SelectHalf;
+                        
                         programContext.pointsCount = 4;
                         for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
                             programContext.sortedPoints[i] = programContext.points[i];
@@ -160,7 +186,9 @@
                                    }
                                    return 0
                                    ;});
-                        return;
+                        programContext.rotation = {(float32)(programContext.sortedPoints[2].x - programContext.sortedPoints[0].x), (float32)(programContext.sortedPoints[2].y - programContext.sortedPoints[0].y)};
+                        programContext.rotationCenter = {((float32)programContext.sortedPoints[0].x)/programContext.bitmap.info.width, ((float32)programContext.sortedPoints[0].y)/programContext.bitmap.info.height};
+                        step = true;
                     }
                     if(programContext.input.back == true){
                         programContext.pointsCount--;
@@ -230,8 +258,13 @@
                             rotationCount++;
                         }
                     }
-                    ASSERT(rotationCount>0);
                     
+                    ASSERT(rotationCount>0);
+                    if(rotationCount == 0){
+                        printf("Error: CV failed to analyze rotation\n");
+                        context.quit = true;
+                        return;
+                    }
                     
                     
                     v2 rotation = {};
@@ -266,18 +299,25 @@
                     }
                     
                     ASSERT(biggestCluster > 0);
-                    
-                    v2 down = V2(0, 1);
-                    float32 degAngle = radAngle(rotation, down) * 180 / PI;
-                    if(det(rotation, down) < 0){
-                        degAngle *= -1;
+                    if(biggestCluster == 0){
+                        printf("Error: CV failed to recognize rotation, too many different guesses.\n");
+                        context.quit = true;
+                        return;
                     }
+                    
+                    programContext.rotation = rotation;
+                    programContext.rotationCenter = center;
                     
                     POPI;
                     
+                    v2 down = V2(0, 1);
+                    float32 degAngle = radAngle(programContext.rotation, down) * 180 / PI;
+                    if(det(programContext.rotation, down) < 0){
+                        degAngle *= -1;
+                    }
                     
+                    rotateImage(&programContext.bitmap, degAngle, programContext.rotationCenter.x, programContext.rotationCenter.y);
                     
-                    rotateImage(&programContext.bitmap, degAngle, center.x, center.y);
                     
                     
                     
@@ -308,7 +348,13 @@
                             
                         }
                         rX = w;
-                        cropImageX(&programContext.bitmap, lX, rX);
+                        bool result = cropImageX(&programContext.bitmap, lX, rX);
+                        ASSERT(result);
+                        if(result == false){
+                            printf("Error: IP failed to crop image\n");
+                            context.quit = true;
+                            return;
+                        }
                         
                         uint32 w1 = (uint32)((float32)programContext.bitmap.info.width * 0.1f);
                         uint32 w2 = (uint32)((float32)programContext.bitmap.info.width * 0.9f);
@@ -333,6 +379,11 @@
                         }
                         
                         ASSERT(foundLeft && foundRight);
+                        if(foundLeft == false || foundLeft == false){
+                            printf("Error: CV failed to find image borders to crop\n");
+                            context.quit = true;
+                            return;
+                        }
                         tY = h;
                         
                         foundRight = foundLeft = false;
@@ -352,24 +403,58 @@
                         }
                         
                         ASSERT(foundLeft && foundRight);
+                        if(foundLeft == false || foundLeft == false){
+                            printf("Error: CV failed to find image borders to crop\n");
+                            context.quit = true;
+                            return;
+                        }
                         bY = h;
                         
-                        cropImageY(&programContext.bitmap, bY, tY);
-                        
+                        bool result = cropImageY(&programContext.bitmap, bY, tY);
+                        ASSERT(result);
+                        if(result == false){
+                            printf("Error: IP failed to crop image\n");
+                            context.quit = true;
+                            return;
+                        }
                     }
                     
                     
                 }
-                programContext.state = ProgramState_SelectHalf;
+                
+                step = true;
             }
             
-            
+            if(step){
+                //automatic rotates first
+                if(parameters->isManual){
+                    v2 down = V2(0, 1);
+                    float32 degAngle = radAngle(programContext.rotation, down) * 180 / PI;
+                    if(det(programContext.rotation, down) < 0){
+                        degAngle *= -1;
+                    }
+                    
+                    rotateImage(&programContext.bitmap, degAngle, programContext.rotationCenter.x, programContext.rotationCenter.y);
+                    
+                    
+                    //rotate the points too
+                    
+                    //crop that motherfucker
+                }
+                
+                programContext.state = ProgramState_SelectHalf;
+                if(parameters->isManual){
+                    return;
+                }
+            }
             
         }
         
         PixelGradient * gradients;
         
         if(!parameters->isManual || programContext.state == ProgramState_SelectHalf){
+            
+            
             
             if(parameters->isManual){
                 if(programContext.input.back == true){
