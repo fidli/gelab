@@ -24,6 +24,8 @@
         dv2 mouse;
         dv2 line[2];
         dv2 points[4];
+        dv2 sortedPoints[4];
+        dv2 half[2];
         uint8 pointsCount;
         UserInput input;
     };
@@ -134,8 +136,11 @@
                         programContext.points[3] = programContext.line[1];
                         programContext.state = ProgramState_SelectHalf;
                         programContext.pointsCount = 4;
+                        for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
+                            programContext.sortedPoints[i] = programContext.points[i];
+                        }
                         //sort stable by left top corner to right bot corner
-                        insertSort((byte *) programContext.points, sizeof(programContext.points[0]), ARRAYSIZE(programContext.points), [](void * a, void *b) -> int8{
+                        insertSort((byte *) programContext.sortedPoints, sizeof(programContext.sortedPoints[0]), ARRAYSIZE(programContext.sortedPoints), [](void * a, void *b) -> int8{
                                    int32 x1 = ((dv2 *) a)->x;
                                    int32 x2 = ((dv2 *) b)->x;
                                    if(x1 > x2){
@@ -145,7 +150,7 @@
                                    }
                                    return 0
                                    ;});
-                        insertSort((byte *) programContext.points, sizeof(programContext.points[0]), ARRAYSIZE(programContext.points), [](void * a, void *b) -> int8{
+                        insertSort((byte *) programContext.sortedPoints, sizeof(programContext.sortedPoints[0]), ARRAYSIZE(programContext.sortedPoints), [](void * a, void *b) -> int8{
                                    int32 y1 = ((dv2 *) a)->y;
                                    int32 y2 = ((dv2 *) b)->y;
                                    if(y1 > y2){
@@ -372,7 +377,10 @@
                     programContext.state = ProgramState_SelectCorners;
                 }
                 if(programContext.input.click == true){
+                    programContext.half[0] = programContext.line[0];
+                    programContext.half[1] = programContext.line[1];
                     programContext.state = ProgramState_SelectMarks;
+                    return;
                 }
             }else{
                 
@@ -589,7 +597,13 @@
         if(!parameters->isManual || programContext.state == ProgramState_SelectMarks){
             
             if(parameters->isManual){
-                
+                if(programContext.input.back == true){
+                    programContext.state = ProgramState_SelectHalf;
+                }
+                if(programContext.input.click == true){
+                    
+                    programContext.state = ProgramState_Shutdown;
+                }
             }else{
                 
                 
@@ -721,12 +735,13 @@
                     */
                     
                 }
+                programContext.state = ProgramState_Shutdown;
             }
-            programContext.state = ProgramState_Shutdown;
+            
         }
         
         
-        if(!parameters->isManual || programContext.state == ProgramState_SelectMarks){
+        if(!parameters->isManual || programContext.state == ProgramState_Shutdown){
             
             
             

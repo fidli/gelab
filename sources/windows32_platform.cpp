@@ -518,7 +518,42 @@
                                     }
                                     
                                     if(programContext.state == ProgramState_SelectHalf){
+                                        dv2 lineVec = programContext.sortedPoints[2] - programContext.sortedPoints[0];
+                                        v2 unitVec = normalize(lineVec);
+                                        float32 coef = dot({(float32)programContext.mouse.x - programContext.sortedPoints[0].x, (float32)programContext.mouse.y - programContext.sortedPoints[0].y}, unitVec);
+                                        v2 perpWorld = coef * unitVec;
+                                        dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
+                                        dv2 projcast2 = projcast1 + programContext.sortedPoints[1];
+                                        projcast1 += programContext.sortedPoints[0];
+                                        if(projcast1.y > programContext.sortedPoints[2].y){
+                                            projcast1 = programContext.sortedPoints[2];
+                                            projcast2 = programContext.sortedPoints[3];
+                                        }else if(projcast1.y < programContext.sortedPoints[0].y){
+                                            projcast1 = programContext.sortedPoints[0];
+                                            projcast2 = programContext.sortedPoints[1];
+                                        }
+                                        programContext.line[0] = projcast1;
+                                        programContext.line[1] = projcast2;
                                         
+                                    }else if(programContext.state == ProgramState_SelectMarks){
+                                        
+                                        dv2 lineVec = programContext.sortedPoints[2] - programContext.sortedPoints[0];
+                                        v2 unitVec = normalize(lineVec);
+                                        float32 coef = dot({(float32)programContext.mouse.x - programContext.sortedPoints[0].x, (float32)programContext.mouse.y - programContext.sortedPoints[0].y}, unitVec);
+                                        v2 perpWorld = coef * unitVec;
+                                        dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
+                                        projcast1 += programContext.sortedPoints[0];
+                                        if(projcast1.y > programContext.half[0].y){
+                                            projcast1 = programContext.half[0];
+                                            
+                                        }else if(projcast1.y < programContext.sortedPoints[0].y){
+                                            projcast1 = programContext.sortedPoints[0];
+                                            
+                                        }
+                                        v2 cast = 0.1f *(programContext.sortedPoints[1] - programContext.sortedPoints[0]);
+                                        dv2 projcast2 = projcast1 + DV2((int32)cast.x, (int32)cast.y); 
+                                        programContext.line[0] = projcast1;
+                                        programContext.line[1] = projcast2;
                                     }
                                     
                                     if(context.mouseOut){
@@ -567,11 +602,17 @@
                                         
                                     }else if(programContext.pointsCount == 4){
                                         //top left to bot right...
-                                        drawLine(&programContext.points[0], &programContext.points[1]);
-                                        drawLine(&programContext.points[1], &programContext.points[3]);
-                                        drawLine(&programContext.points[3], &programContext.points[2]);
-                                        drawLine(&programContext.points[2], &programContext.points[0]);
+                                        drawLine(&programContext.sortedPoints[0], &programContext.sortedPoints[1]);
+                                        drawLine(&programContext.sortedPoints[1], &programContext.sortedPoints[3]);
+                                        drawLine(&programContext.sortedPoints[3], &programContext.sortedPoints[2]);
+                                        drawLine(&programContext.sortedPoints[2], &programContext.sortedPoints[0]);
                                         
+                                        if(programContext.state >= ProgramState_SelectHalf){
+                                            drawLine(&programContext.line[0], &programContext.line[1]);
+                                        }
+                                        if(programContext.state > ProgramState_SelectHalf){
+                                            drawLine(&programContext.half[0], &programContext.half[1]);
+                                        }
                                         
                                     }
                                     
