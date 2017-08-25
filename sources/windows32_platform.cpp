@@ -281,374 +281,402 @@
         
         if (memoryStart) {
             initMemory(memoryStart);
-            bool ioResult = initIo();
-            ASSERT(ioResult);
-            HRESULT jettisonPrivilegesResult = jettisonAllPrivileges();
-            ASSERT(jettisonPrivilegesResult == ERROR_SUCCESS);
             
-            
-            char ** argv = &PUSHA(char *, argc);
-            char ** argvUTF8 = &PUSHA(char *, argc);
-            
-            for(int i = 0; i < argc; i++){
-                int toAlloc = WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, NULL, 0, NULL, NULL);
-                ASSERT(toAlloc != 0);
-                argvUTF8[i] = &PUSHA(char, toAlloc);
-                int res = WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, argvUTF8[i], toAlloc, NULL, NULL);
-                ASSERT(res != 0);
-                uint32 finalLen;
-                if(convUTF8toAscii((byte *)argvUTF8[i], toAlloc, &argv[i], &finalLen) != 0){
-                    printf("Warning: file name is not fully ascii compatible - those characters were replaced by '_'. Please use simple name for path/file \n");
-                }
-            }
-            
-            RunParameters * parameters = (RunParameters *) mem.persistent;
-            parameters->invertColors = true;
-            parameters->manualCrop = false;
-            parameters->blocksCount = 1;
-            parameters->dontMark = true;
-            parameters->labelsCount = 0;
-            parameters->targetMark = 0;
-            parameters->columns = 0;
-            parameters->isManual = false;
-            for(int32 i = 0; i < ARRAYSIZE(parameters->dontInput); i++){
-                parameters->dontInput[i] = false;
-            }
-            if(argc == 1){
-                printHelp(argv[0]);
+            if(initIo()){
                 
-            }else{
-                bool valid = true;
-                uint8 highestBlockList = 0;
-                if(argc >= 3){
+                if(jettisonAllPrivileges() == ERROR_SUCCESS){
                     
-                    strcpy(parameters->inputfile, argv[1]);
-                    strcpy(parameters->outputfile, argv[argc-1]);
                     
-                    for(uint8 i = 2; i < argc - 1 && valid; i++){
-                        if(argv[i][0] != '-'){
-                            valid = false;
-                            break;
+                    char ** argv = &PUSHA(char *, argc);
+                    char ** argvUTF8 = &PUSHA(char *, argc);
+                    bool success = true;
+                    for(int i = 0; i < argc && success; i++){
+                        int toAlloc = WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, NULL, 0, NULL, NULL);
+                        success &= toAlloc != 0;
+                        argvUTF8[i] = &PUSHA(char, toAlloc);
+                        int res = WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, argvUTF8[i], toAlloc, NULL, NULL);
+                        success &= res != 0;
+                        uint32 finalLen;
+                        if(convUTF8toAscii((byte *)argvUTF8[i], toAlloc, &argv[i], &finalLen) != 0){
+                            printf("Error: argument is not fully ascii compatible - those characters were replaced by '_'. Please use simple ASCII parameter values\n");
                         }
-                        switch(argv[i][1]){
-                            case 'b':{
-                                int16 blocks;
-                                if(i == argc - 2 || sscanf(argv[i+1], "%hd", &blocks) != 1){
-                                    printf("Error: Invalid parameter -b\n");
-                                    valid = false;
-                                    break;
-                                };
-                                if(blocks < 1 || blocks > 50){
-                                    printf("Error: Invalid blocks count, available range is [1,50]\n");
-                                    valid = false;
-                                    break;
-                                }
-                                parameters->blocksCount = blocks;
-                                i++;
-                            }break;
-                            case 'm':{
-                                int16 mark;
-                                if(i == argc - 3 || sscanf(argv[i+2], "%hd", &mark) != 1 || sscanf(argv[i+1], "%256%256s", parameters->markText) != 1){
-                                    printf("Error: Invalid parameter -m\n");
-                                    valid = false;
-                                    break;
-                                };
-                                if(mark < 1 || mark > 255){
-                                    printf("Error: Invalid mark order, available range is [1,255]\n");
-                                    valid = false;
-                                    break;
-                                }
-                                parameters->targetMark = mark-1;
-                                parameters->dontMark = false;
-                                i += 2;
-                            }break;
-                            case 'l':{
-                                int16 index;
-                                char buffer[256];
-                                if(i == argc - 3 || sscanf(argv[i+2], "%hd", &index) != 1 || sscanf(argv[i+1], "%256%256s", buffer) != 1){
-                                    printf("Error: Invalid parameter -l\n");
-                                    valid = false;
-                                    break;
-                                };
-                                if(index < 1 || index > 50){
-                                    printf("Error: Invalid beginning_symbol_index, available range is [1,50]\n");
-                                    valid = false;
-                                    break;
-                                }
-                                uint32 j = 0;
-                                for(;buffer[j] != '\0'; j++){
-                                    if(parameters->labelsCount == 50){
-                                        printf("Error: Labeling list exceeded count of 50.\n");
-                                        valid = false;
-                                        break;
-                                    }
-                                    parameters->labels[parameters->labelsCount] = buffer[j];
-                                    parameters->labelsCount++;
-                                }
-                                
-                                if(index > parameters->labelsCount){
-                                    printf("Error: Invalid beginning_symbol_index, its bigger than label list size\n");
-                                    valid = false;
-                                    break;
-                                }
-                                
-                                parameters->beginningSymbolIndex = index-1;
-                                i += 2;
-                            }break;
-                            case 'n':{
-                                int16 cols;
-                                if(i == argc - 2 || sscanf(argv[i+1], "%hd", &cols) != 1){
-                                    printf("Error: Invalid parameter -n\n");
-                                    valid = false;
-                                    break;
-                                };
-                                if(cols < 1 || cols > 255){
-                                    printf("Error: inalid columns amount, available range is [1,255]\n");
-                                    valid = false;
-                                    break;
-                                }
-                                parameters->columns = cols;
-                                i++;
-                            }break;
-                            case 'i':{
-                                char buffer[256];
-                                if(i == argc - 2 || sscanf(argv[i+1], "%256%256s", buffer) != 1){
-                                    printf("Error: Invalid parameter -i\n");
-                                    valid = false;
-                                    break;
-                                };
-                                
-                                for(int32 j = 0; j < ARRAYSIZE(parameters->dontInput); j++){
-                                    parameters->dontInput[j] = true;
-                                }
-                                
-                                uint32 offset = 0;
-                                int32 currentNumber;
-                                while(sscanf(buffer + offset, "%256%d", &currentNumber) == 1){
-                                    if(currentNumber < 1 || currentNumber > 50){
-                                        printf("Error: Invalid block list index, available range is [1,50]\n");
-                                        valid = false;
-                                        break;
-                                    }
-                                    if(currentNumber > highestBlockList){
-                                        highestBlockList = currentNumber;
-                                    }
-                                    parameters->dontInput[currentNumber-1] = false;
-                                    offset += numlen(currentNumber) + 1;
-                                    if(*(buffer + offset - 1) != ',' && *(buffer + offset - 1) != '\0'){
-                                        printf("Error: Invalid block list separator\n");
-                                        valid = false;
-                                        break;
-                                    }
-                                }
-                                
-                                i++;
-                            }break;
-                            case 'I':{
-                                parameters->invertColors = false;
-                            }break;
-                            case 'M':{
-                                parameters->isManual = true;
-                            }break;
-                            default:{
-                                valid = false;
-                                break;
-                            }break;
-                        }
-                        
                     }
-                }else{
-                    valid = false;
-                }
-                bool senseCheck = true;
-                
-                if(highestBlockList > parameters->blocksCount){
-                    senseCheck = false;
-                    printf("Error: Block list contains block with higher index than block count\n");
-                }
-                
-                if(parameters->labelsCount > 0 && parameters->columns == 0){
-                    senseCheck = false;
-                    printf("Error: Please specify also -n when specifying -l\n");
-                }
-                
-                if(!valid || !senseCheck){
-                    printf("Error: Invalid arguments, see usage.\n");
-                    printHelp(argv[0]);
-                }else{
-                    
-                    if(parameters->isManual){
-                        WNDCLASSEX style = {};
-                        style.cbSize = sizeof(WNDCLASSEX);
-                        style.style = CS_OWNDC;
-                        style.lpfnWndProc = WindowProc;
-                        style.hInstance = context.hInstance;
-                        style.lpszClassName = "MainClass";
-                        if(RegisterClassEx(&style) != 0){
-                            context.window = CreateWindowEx(NULL,
-                                                            "MainClass", "GeLab manual crop | gelab.fidli.eu", WS_OVERLAPPEDWINDOW | WS_SIZEBOX,
-                                                            CW_USEDEFAULT, CW_USEDEFAULT,CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, context.hInstance, NULL);
+                    if(success){
+                        RunParameters * parameters = (RunParameters *) mem.persistent;
+                        parameters->invertColors = true;
+                        parameters->manualCrop = false;
+                        parameters->blocksCount = 1;
+                        parameters->dontMark = true;
+                        parameters->labelsCount = 0;
+                        parameters->targetMark = 0;
+                        parameters->columns = 0;
+                        parameters->isManual = false;
+                        for(int32 i = 0; i < ARRAYSIZE(parameters->dontInput); i++){
+                            parameters->dontInput[i] = false;
+                        }
+                        if(argc == 1){
+                            printHelp(argv[0]);
                             
-                            if(context.window){
-                                ShowWindow(context.window, SW_SHOWMAXIMIZED);
-                                HCURSOR cursor = (HCURSOR) LoadImage(context.hInstance, IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
+                        }else{
+                            bool valid = true;
+                            uint8 highestBlockList = 0;
+                            if(argc >= 3){
                                 
-                                while (!context.quit) {
-                                    
-                                    programContext.input = {};
-                                    
-                                    MSG msg;
-                                    while(PeekMessage(&msg, context.window, 0, 0, PM_REMOVE))
-                                    {
-                                        TranslateMessage(&msg);
-                                        DispatchMessage(&msg);
+                                strcpy(parameters->inputfile, argv[1]);
+                                strcpy(parameters->outputfile, argv[argc-1]);
+                                
+                                for(uint8 i = 2; i < argc - 1 && valid; i++){
+                                    if(argv[i][0] != '-'){
+                                        valid = false;
+                                        break;
                                     }
-                                    
-                                    if(programContext.pointsCount == 2 && programContext.state == ProgramState_SelectCorners){
-                                        dv2 lineVec = programContext.points[1] - programContext.points[0];
-                                        dv2 perpVec = {-lineVec.y, lineVec.x};
-                                        v2 unitPerpVec = normalize(perpVec);
-                                        float32 coef = dot({(float32)programContext.mouse.x - programContext.points[0].x, (float32)programContext.mouse.y - programContext.points[0].y}, unitPerpVec);
-                                        v2 perpWorld = coef * unitPerpVec;
-                                        dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
-                                        dv2 projcast2 = projcast1 + programContext.points[1];
-                                        projcast1 += programContext.points[0];
-                                        programContext.line[0] = projcast1;
-                                        programContext.line[1] = projcast2;
-                                    }
-                                    
-                                    if(programContext.state == ProgramState_SelectHalf){
-                                        dv2 lineVec = programContext.sortedPoints[2] - programContext.sortedPoints[0];
-                                        v2 unitVec = normalize(lineVec);
-                                        float32 coef = dot({(float32)programContext.mouse.x - programContext.sortedPoints[0].x, (float32)programContext.mouse.y - programContext.sortedPoints[0].y}, unitVec);
-                                        v2 perpWorld = coef * unitVec;
-                                        dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
-                                        dv2 projcast2 = projcast1 + programContext.sortedPoints[1];
-                                        projcast1 += programContext.sortedPoints[0];
-                                        if(projcast1.y > programContext.sortedPoints[2].y){
-                                            projcast1 = programContext.sortedPoints[2];
-                                            projcast2 = programContext.sortedPoints[3];
-                                        }else if(projcast1.y < programContext.sortedPoints[0].y){
-                                            projcast1 = programContext.sortedPoints[0];
-                                            projcast2 = programContext.sortedPoints[1];
-                                        }
-                                        programContext.line[0] = projcast1;
-                                        programContext.line[1] = projcast2;
-                                        
-                                    }else if(programContext.state == ProgramState_SelectMarks){
-                                        
-                                        dv2 lineVec = programContext.sortedPoints[2] - programContext.sortedPoints[0];
-                                        v2 unitVec = normalize(lineVec);
-                                        float32 coef = dot({(float32)programContext.mouse.x - programContext.sortedPoints[0].x, (float32)programContext.mouse.y - programContext.sortedPoints[0].y}, unitVec);
-                                        v2 perpWorld = coef * unitVec;
-                                        dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
-                                        projcast1 += programContext.sortedPoints[0];
-                                        if(projcast1.y > programContext.half[0].y){
-                                            projcast1 = programContext.half[0];
-                                            
-                                        }else if(projcast1.y < programContext.sortedPoints[0].y){
-                                            projcast1 = programContext.sortedPoints[0];
-                                            
-                                        }
-                                        v2 cast = 0.1f *(programContext.sortedPoints[1] - programContext.sortedPoints[0]);
-                                        dv2 projcast2 = projcast1 + DV2((int32)cast.x, (int32)cast.y); 
-                                        programContext.line[0] = projcast1;
-                                        programContext.line[1] = projcast2;
-                                    }
-                                    
-                                    if(context.mouseOut){
-                                        if(GetCursor() == NULL){
-                                            cursor = SetCursor(cursor);
-                                        }
-                                    }else{
-                                        if(GetCursor() != NULL){
-                                            cursor = SetCursor(NULL);
-                                        }
-                                    }
-                                    
-                                    
-                                    run(parameters);
-                                    
-                                    
-                                    
-                                    
-                                    /**
-                                    draw basic image
-                                    */
-                                    for(uint32 h = 0; h < renderer.height; h++){
-                                        uint32 pitch = h*renderer.width;
-                                        
-                                        for(uint32 w = 0; w < renderer.width; w++){
-                                            
-                                            if(programContext.pointsCount <= 1 &&(h == programContext.mouse.y || w == programContext.mouse.x)){
-                                                renderer.drawbuffer[pitch + w] = 0x0000FF00;
+                                    switch(argv[i][1]){
+                                        case 'b':{
+                                            int16 blocks;
+                                            if(i == argc - 2 || sscanf(argv[i+1], "%hd", &blocks) != 1){
+                                                printf("Error: Invalid parameter -b\n");
+                                                valid = false;
+                                                break;
+                                            };
+                                            if(blocks < 1 || blocks > 50){
+                                                printf("Error: Invalid blocks count, available range is [1,50]\n");
+                                                valid = false;
+                                                break;
                                             }
-                                            else{
-                                                renderer.drawbuffer[pitch + w] = ((uint32 *)renderer.drawBitmapData.data)[pitch + w];
-                                                
+                                            parameters->blocksCount = blocks;
+                                            i++;
+                                        }break;
+                                        case 'm':{
+                                            int16 mark;
+                                            if(i == argc - 3 || sscanf(argv[i+2], "%hd", &mark) != 1 || sscanf(argv[i+1], "%256%256s", parameters->markText) != 1){
+                                                printf("Error: Invalid parameter -m\n");
+                                                valid = false;
+                                                break;
+                                            };
+                                            if(mark < 1 || mark > 255){
+                                                printf("Error: Invalid mark order, available range is [1,255]\n");
+                                                valid = false;
+                                                break;
                                             }
-                                        }
+                                            parameters->targetMark = mark-1;
+                                            parameters->dontMark = false;
+                                            i += 2;
+                                        }break;
+                                        case 'l':{
+                                            int16 index;
+                                            char buffer[256];
+                                            if(i == argc - 3 || sscanf(argv[i+2], "%hd", &index) != 1 || sscanf(argv[i+1], "%256%256s", buffer) != 1){
+                                                printf("Error: Invalid parameter -l\n");
+                                                valid = false;
+                                                break;
+                                            };
+                                            if(index < 1 || index > 50){
+                                                printf("Error: Invalid beginning_symbol_index, available range is [1,50]\n");
+                                                valid = false;
+                                                break;
+                                            }
+                                            uint32 j = 0;
+                                            for(;buffer[j] != '\0'; j++){
+                                                if(parameters->labelsCount == 50){
+                                                    printf("Error: Labeling list exceeded count of 50.\n");
+                                                    valid = false;
+                                                    break;
+                                                }
+                                                parameters->labels[parameters->labelsCount] = buffer[j];
+                                                parameters->labelsCount++;
+                                            }
+                                            
+                                            if(index > parameters->labelsCount){
+                                                printf("Error: Invalid beginning_symbol_index, its bigger than label list size\n");
+                                                valid = false;
+                                                break;
+                                            }
+                                            
+                                            parameters->beginningSymbolIndex = index-1;
+                                            i += 2;
+                                        }break;
+                                        case 'n':{
+                                            int16 cols;
+                                            if(i == argc - 2 || sscanf(argv[i+1], "%hd", &cols) != 1){
+                                                printf("Error: Invalid parameter -n\n");
+                                                valid = false;
+                                                break;
+                                            };
+                                            if(cols < 1 || cols > 255){
+                                                printf("Error: inalid columns amount, available range is [1,255]\n");
+                                                valid = false;
+                                                break;
+                                            }
+                                            parameters->columns = cols;
+                                            i++;
+                                        }break;
+                                        case 'i':{
+                                            char buffer[256];
+                                            if(i == argc - 2 || sscanf(argv[i+1], "%256%256s", buffer) != 1){
+                                                printf("Error: Invalid parameter -i\n");
+                                                valid = false;
+                                                break;
+                                            };
+                                            
+                                            for(int32 j = 0; j < ARRAYSIZE(parameters->dontInput); j++){
+                                                parameters->dontInput[j] = true;
+                                            }
+                                            
+                                            uint32 offset = 0;
+                                            int32 currentNumber;
+                                            while(sscanf(buffer + offset, "%256%d", &currentNumber) == 1){
+                                                if(currentNumber < 1 || currentNumber > 50){
+                                                    printf("Error: Invalid block list index, available range is [1,50]\n");
+                                                    valid = false;
+                                                    break;
+                                                }
+                                                if(currentNumber > highestBlockList){
+                                                    highestBlockList = currentNumber;
+                                                }
+                                                parameters->dontInput[currentNumber-1] = false;
+                                                offset += numlen(currentNumber) + 1;
+                                                if(*(buffer + offset - 1) != ',' && *(buffer + offset - 1) != '\0'){
+                                                    printf("Error: Invalid block list separator\n");
+                                                    valid = false;
+                                                    break;
+                                                }
+                                            }
+                                            
+                                            i++;
+                                        }break;
+                                        case 'I':{
+                                            parameters->invertColors = false;
+                                        }break;
+                                        case 'M':{
+                                            parameters->isManual = true;
+                                        }break;
+                                        default:{
+                                            valid = false;
+                                            break;
+                                        }break;
                                     }
                                     
-                                    if(programContext.pointsCount  == 1){
-                                        drawLine(&programContext.points[0], &programContext.mouse);
-                                    }else if(programContext.pointsCount == 2){
-                                        drawLine(&programContext.points[0], &programContext.points[1]);
-                                        
-                                        drawLine(&programContext.points[0], &programContext.line[0]);
-                                        drawLine(&programContext.points[1], &programContext.line[1]);
-                                        drawLine(&programContext.line[0], &programContext.line[1]);
-                                        
-                                        
-                                    }else if(programContext.pointsCount == 4){
-                                        //top left to bot right...
-                                        drawLine(&programContext.sortedPoints[0], &programContext.sortedPoints[1]);
-                                        drawLine(&programContext.sortedPoints[1], &programContext.sortedPoints[3]);
-                                        drawLine(&programContext.sortedPoints[3], &programContext.sortedPoints[2]);
-                                        drawLine(&programContext.sortedPoints[2], &programContext.sortedPoints[0]);
-                                        
-                                        if(programContext.state >= ProgramState_SelectHalf){
-                                            drawLine(&programContext.line[0], &programContext.line[1]);
-                                        }
-                                        if(programContext.state > ProgramState_SelectHalf){
-                                            drawLine(&programContext.half[0], &programContext.half[1]);
-                                        }
-                                        
-                                    }
-                                    
-                                    InvalidateRect(context.window, NULL, TRUE);                       
                                 }
-                                
-                                
-                                
-                                
-                                
-                                
                             }else{
-                                //log
-                                ASSERT(!"failed to create window");
+                                valid = false;
+                            }
+                            bool senseCheck = true;
+                            
+                            if(highestBlockList > parameters->blocksCount){
+                                senseCheck = false;
+                                printf("Error: Block list contains block with higher index than block count\n");
                             }
                             
-                            UnregisterClass("MainClass", context.hInstance);
+                            if(parameters->labelsCount > 0 && parameters->columns == 0){
+                                senseCheck = false;
+                                printf("Error: Please specify also -n when specifying -l\n");
+                            }
+                            
+                            if(!valid || !senseCheck){
+                                printf("Error: Invalid arguments, see usage.\n");
+                                printHelp(argv[0]);
+                            }else{
+                                
+                                if(parameters->isManual){
+                                    WNDCLASSEX style = {};
+                                    style.cbSize = sizeof(WNDCLASSEX);
+                                    style.style = CS_OWNDC;
+                                    style.lpfnWndProc = WindowProc;
+                                    style.hInstance = context.hInstance;
+                                    style.lpszClassName = "MainClass";
+                                    if(RegisterClassEx(&style) != 0){
+                                        context.window = CreateWindowEx(NULL,
+                                                                        "MainClass", "GeLab manual crop | gelab.fidli.eu", WS_OVERLAPPEDWINDOW | WS_SIZEBOX,
+                                                                        CW_USEDEFAULT, CW_USEDEFAULT,CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, context.hInstance, NULL);
+                                        
+                                        if(context.window){
+                                            ShowWindow(context.window, SW_SHOWMAXIMIZED);
+                                            HCURSOR cursor = (HCURSOR) LoadImage(context.hInstance, IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
+                                            
+                                            while (!context.quit) {
+                                                
+                                                programContext.input = {};
+                                                
+                                                MSG msg;
+                                                while(PeekMessage(&msg, context.window, 0, 0, PM_REMOVE))
+                                                {
+                                                    TranslateMessage(&msg);
+                                                    DispatchMessage(&msg);
+                                                }
+                                                
+                                                if(programContext.pointsCount == 2 && programContext.state == ProgramState_SelectCorners){
+                                                    dv2 lineVec = programContext.points[1] - programContext.points[0];
+                                                    dv2 perpVec = {-lineVec.y, lineVec.x};
+                                                    v2 unitPerpVec = normalize(perpVec);
+                                                    float32 coef = dot({(float32)programContext.mouse.x - programContext.points[0].x, (float32)programContext.mouse.y - programContext.points[0].y}, unitPerpVec);
+                                                    v2 perpWorld = coef * unitPerpVec;
+                                                    dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
+                                                    dv2 projcast2 = projcast1 + programContext.points[1];
+                                                    projcast1 += programContext.points[0];
+                                                    programContext.line[0] = projcast1;
+                                                    programContext.line[1] = projcast2;
+                                                }
+                                                
+                                                if(programContext.state == ProgramState_SelectHalf){
+                                                    dv2 lineVec = programContext.sortedPoints[2] - programContext.sortedPoints[0];
+                                                    v2 unitVec = normalize(lineVec);
+                                                    float32 coef = dot({(float32)programContext.mouse.x - programContext.sortedPoints[0].x, (float32)programContext.mouse.y - programContext.sortedPoints[0].y}, unitVec);
+                                                    v2 perpWorld = coef * unitVec;
+                                                    dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
+                                                    dv2 projcast2 = projcast1 + programContext.sortedPoints[1];
+                                                    projcast1 += programContext.sortedPoints[0];
+                                                    if(projcast1.y > programContext.sortedPoints[2].y){
+                                                        projcast1 = programContext.sortedPoints[2];
+                                                        projcast2 = programContext.sortedPoints[3];
+                                                    }else if(projcast1.y < programContext.sortedPoints[0].y){
+                                                        projcast1 = programContext.sortedPoints[0];
+                                                        projcast2 = programContext.sortedPoints[1];
+                                                    }
+                                                    programContext.line[0] = projcast1;
+                                                    programContext.line[1] = projcast2;
+                                                    
+                                                }else if(programContext.state == ProgramState_SelectMarks){
+                                                    
+                                                    dv2 lineVec = programContext.sortedPoints[2] - programContext.sortedPoints[0];
+                                                    v2 unitVec = normalize(lineVec);
+                                                    float32 coef = dot({(float32)programContext.mouse.x - programContext.sortedPoints[0].x, (float32)programContext.mouse.y - programContext.sortedPoints[0].y}, unitVec);
+                                                    v2 perpWorld = coef * unitVec;
+                                                    dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
+                                                    projcast1 += programContext.sortedPoints[0];
+                                                    if(projcast1.y > programContext.half[0].y){
+                                                        projcast1 = programContext.half[0];
+                                                        
+                                                    }else if(projcast1.y < programContext.sortedPoints[0].y){
+                                                        projcast1 = programContext.sortedPoints[0];
+                                                        
+                                                    }
+                                                    v2 cast = 0.1f *(programContext.sortedPoints[1] - programContext.sortedPoints[0]);
+                                                    dv2 projcast2 = projcast1 + DV2((int32)cast.x, (int32)cast.y); 
+                                                    programContext.line[0] = projcast1;
+                                                    programContext.line[1] = projcast2;
+                                                }
+                                                
+                                                if(context.mouseOut){
+                                                    if(GetCursor() == NULL){
+                                                        cursor = SetCursor(cursor);
+                                                    }
+                                                }else{
+                                                    if(GetCursor() != NULL){
+                                                        cursor = SetCursor(NULL);
+                                                    }
+                                                }
+                                                
+                                                
+                                                run(parameters);
+                                                
+                                                
+                                                
+                                                
+                                                /**
+                                                draw basic image
+                                                */
+                                                for(uint32 h = 0; h < renderer.height; h++){
+                                                    uint32 pitch = h*renderer.width;
+                                                    
+                                                    for(uint32 w = 0; w < renderer.width; w++){
+                                                        
+                                                        if(programContext.pointsCount <= 1 &&(h == programContext.mouse.y || w == programContext.mouse.x)){
+                                                            renderer.drawbuffer[pitch + w] = 0x0000FF00;
+                                                        }
+                                                        else{
+                                                            renderer.drawbuffer[pitch + w] = ((uint32 *)renderer.drawBitmapData.data)[pitch + w];
+                                                            
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                if(programContext.pointsCount  == 1){
+                                                    drawLine(&programContext.points[0], &programContext.mouse);
+                                                }else if(programContext.pointsCount == 2){
+                                                    drawLine(&programContext.points[0], &programContext.points[1]);
+                                                    
+                                                    drawLine(&programContext.points[0], &programContext.line[0]);
+                                                    drawLine(&programContext.points[1], &programContext.line[1]);
+                                                    drawLine(&programContext.line[0], &programContext.line[1]);
+                                                    
+                                                    
+                                                }else if(programContext.pointsCount == 4){
+                                                    //top left to bot right...
+                                                    drawLine(&programContext.sortedPoints[0], &programContext.sortedPoints[1]);
+                                                    drawLine(&programContext.sortedPoints[1], &programContext.sortedPoints[3]);
+                                                    drawLine(&programContext.sortedPoints[3], &programContext.sortedPoints[2]);
+                                                    drawLine(&programContext.sortedPoints[2], &programContext.sortedPoints[0]);
+                                                    
+                                                    if(programContext.state >= ProgramState_SelectHalf){
+                                                        drawLine(&programContext.line[0], &programContext.line[1]);
+                                                    }
+                                                    if(programContext.state > ProgramState_SelectHalf){
+                                                        drawLine(&programContext.half[0], &programContext.half[1]);
+                                                    }
+                                                    
+                                                }
+                                                
+                                                InvalidateRect(context.window, NULL, TRUE);                       
+                                            }
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                        }else{
+                                            printf("Error: System failed to create window for manual cropping.\n"); 
+                                            ASSERT(!"failed to create window");
+                                        }
+                                        
+                                        UnregisterClass("MainClass", context.hInstance);
+                                    }
+                                    
+                                }else{
+                                    
+                                    run(parameters);
+                                }
+                            }
                         }
-                        
                     }else{
-                        
-                        run(parameters);
+                        //system argument parsing failed
+                        printf("Error: System failed to parse CLI arguments\n");
+                        ASSERT(false);
                     }
+                }else{
+                    printf("Error: System failed to lower priviledges\n");
+                    ASSERT(false);
+                    //failed to jettison all priv
                 }
+            }else{
+                //failed to init io
+                char buf[] = "System failed to init console.\n";
+                FileContents error;
+                error.contents = buf;
+                error.size = strlen(buf);
+                appendFile("error.log", &error);
+                ASSERT(false);
             }
-            
-            
             
             if (!VirtualFree(memoryStart, 0, MEM_RELEASE)) {
                 //more like log it
+                char buf[] = "System failed to release memory.\n";
+                FileContents error;
+                error.contents = buf;
+                error.size = strlen(buf);
+                appendFile("error.log", &error);
                 ASSERT(!"Failed to free memory");
             }
             
             
+            
         }else{
             //more like log it
+            char buf[] = "System failed to init memory.\n";
+            FileContents error;
+            error.contents = buf;
+            error.size = strlen(buf);
+            appendFile("error.log", &error);
             ASSERT(!"failed to init memory");
         }
         return 0;
