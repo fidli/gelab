@@ -105,6 +105,7 @@
             
             
             if(parameters->isManual){
+                //resize
                 Image draw;
                 Image tmp;
                 draw.info = programContext.bitmap.info;
@@ -140,7 +141,6 @@
         int32 wj = programContext.bitmap.info.width / 10;
         
         if(!parameters->isManual || programContext.state == ProgramState_SelectCorners){
-            bool step = false;
             if(parameters->isManual){
                 if(programContext.pointsCount == 0){
                     if(programContext.input.click == true){
@@ -165,30 +165,73 @@
                         for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
                             programContext.sortedPoints[i] = programContext.points[i];
                         }
+                        
                         //sort stable by left top corner to right bot corner
-                        insertSort((byte *) programContext.sortedPoints, sizeof(programContext.sortedPoints[0]), ARRAYSIZE(programContext.sortedPoints), [](void * a, void *b) -> int8{
-                                   int32 x1 = ((dv2 *) a)->x;
-                                   int32 x2 = ((dv2 *) b)->x;
-                                   if(x1 > x2){
-                                   return 1;
-                                   }else if(x1 < x2){
-                                   return -1;
-                                   }
-                                   return 0
-                                   ;});
+                        //closest to the origin is top left corner
                         insertSort((byte *) programContext.sortedPoints, sizeof(programContext.sortedPoints[0]), ARRAYSIZE(programContext.sortedPoints), [](void * a, void *b) -> int8{
                                    int32 y1 = ((dv2 *) a)->y;
                                    int32 y2 = ((dv2 *) b)->y;
-                                   if(y1 > y2){
+                                   
+                                   int32 x1 = ((dv2 *) a)->x;
+                                   int32 x2 = ((dv2 *) b)->x;
+                                   int32 A = y1+x1;
+                                   int32 B = y2+x2;
+                                   if(A > B){
                                    return 1;
-                                   }else if(y1 < y2){
+                                   }else if(A < B){
                                    return -1;
                                    }
                                    return 0
                                    ;});
+                        //the rightmost with smallest Y is second
+                        insertSort((byte *) &programContext.sortedPoints[1], sizeof(programContext.sortedPoints[0]), ARRAYSIZE(programContext.sortedPoints) - 1, [](void * a, void *b) -> int8{
+                                   int32 x1 = ((dv2 *) a)->x;
+                                   int32 x2 = ((dv2 *) b)->x;
+                                   int32 A = x1;
+                                   int32 B = x2;
+                                   if(A < B){
+                                   return 1;
+                                   }else if(A > B){
+                                   return -1;
+                                   }
+                                   return 0
+                                   ;});
+                        
+                        uint8 leastIndex = 1;
+                        for(uint8 i = leastIndex + 1; i < ARRAYSIZE(programContext.sortedPoints) - 1; i++){
+                            if(programContext.sortedPoints[i].y < programContext.sortedPoints[leastIndex].y){
+                                leastIndex = i;
+                            }
+                        }
+                        dv2 tmp = programContext.sortedPoints[1];
+                        programContext.sortedPoints[1] = programContext.sortedPoints[leastIndex];
+                        programContext.sortedPoints[leastIndex] = tmp;
+                        
+                        //now the remaining be sorted by x
+                        insertSort((byte *) &programContext.sortedPoints[2], sizeof(programContext.sortedPoints[0]), ARRAYSIZE(programContext.sortedPoints) - 2, [](void * a, void *b) -> int8{
+                                   int32 x1 = ((dv2 *) a)->x;
+                                   int32 x2 = ((dv2 *) b)->x;
+                                   int32 A = x1;
+                                   int32 B = x2;
+                                   if(A > B){
+                                   return 1;
+                                   }else if(A < B){
+                                   return -1;
+                                   }
+                                   return 0
+                                   ;});
+                        
+                        
+                        
                         programContext.rotation = {(float32)(programContext.sortedPoints[2].x - programContext.sortedPoints[0].x), (float32)(programContext.sortedPoints[2].y - programContext.sortedPoints[0].y)};
-                        programContext.rotationCenter = {((float32)programContext.sortedPoints[0].x)/programContext.bitmap.info.width, ((float32)programContext.sortedPoints[0].y)/programContext.bitmap.info.height};
-                        step = true;
+                        programContext.rotationCenter = {((float32)programContext.sortedPoints[0].x)/renderer.drawBitmapData.info.width, ((float32)programContext.sortedPoints[0].y)/renderer.drawBitmapData.info.height};
+                        bool check = programContext.sortedPoints[0].x < programContext.sortedPoints[1].x && programContext.sortedPoints[0].y < programContext.sortedPoints[2].y &&
+                            programContext.sortedPoints[0].y < programContext.sortedPoints[3].y &&
+                            programContext.sortedPoints[2].x < programContext.sortedPoints[3].x;
+                        ASSERT(check);
+                        
+                        programContext.state = ProgramState_SelectHalf;
+                        return;
                     }
                     if(programContext.input.back == true){
                         programContext.pointsCount--;
@@ -410,7 +453,7 @@
                         }
                         bY = h;
                         
-                        bool result = cropImageY(&programContext.bitmap, bY, tY);
+                        result = cropImageY(&programContext.bitmap, bY, tY);
                         ASSERT(result);
                         if(result == false){
                             printf("Error: IP failed to crop image\n");
@@ -421,32 +464,11 @@
                     
                     
                 }
+                programContext.state = ProgramState_SelectHalf;
                 
-                step = true;
             }
             
-            if(step){
-                //automatic rotates first
-                if(parameters->isManual){
-                    v2 down = V2(0, 1);
-                    float32 degAngle = radAngle(programContext.rotation, down) * 180 / PI;
-                    if(det(programContext.rotation, down) < 0){
-                        degAngle *= -1;
-                    }
-                    
-                    rotateImage(&programContext.bitmap, degAngle, programContext.rotationCenter.x, programContext.rotationCenter.y);
-                    
-                    
-                    //rotate the points too
-                    
-                    //crop that motherfucker
-                }
-                
-                programContext.state = ProgramState_SelectHalf;
-                if(parameters->isManual){
-                    return;
-                }
-            }
+            
             
         }
         
@@ -475,8 +497,7 @@
                 
                 
                 
-                ASSERT(programContext.bitmap.info.origin == BitmapOriginType_TopLeft);
-                ASSERT(programContext.bitmap.info.interpretation = BitmapInterpretationType_GrayscaleBW01);
+                
                 PUSHI;
                 gradients = &PUSHA(PixelGradient, (programContext.bitmap.info.width) * (programContext.bitmap.info.height));
                 uint32 * averages = &PUSHA(uint32, (programContext.bitmap.info.width) * (programContext.bitmap.info.height));
@@ -525,16 +546,16 @@
                 }
                 /*
                 for(uint32 x = 1; x < programContext.bitmap.info.width - 1; x = x + tileW){
-                    for(uint32 y = 1; y < programContext.bitmap.info.height - 1; y = y + tileH){
-                        for(uint32 dX = x; dX < tileW + x; dX++){
-                            for(uint32 dY = y; dY < tileH + y; dY++){
-                                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = averages[y * programContext.bitmap.info.width + x];// (gradients[dY * programContext.bitmap.info.width + dX].size  > 5 &&
-                                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] < 40)? 255 : 0;
-                                programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = (gradients[dY * programContext.bitmap.info.width + dX].size > 5) ? 255 : 0;
-                            }
-                        }
-                        
-                    }
+                for(uint32 y = 1; y < programContext.bitmap.info.height - 1; y = y + tileH){
+                for(uint32 dX = x; dX < tileW + x; dX++){
+                for(uint32 dY = y; dY < tileH + y; dY++){
+                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = averages[y * programContext.bitmap.info.width + x];// (gradients[dY * programContext.bitmap.info.width + dX].size  > 5 &&
+                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] < 40)? 255 : 0;
+                programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = (gradients[dY * programContext.bitmap.info.width + dX].size > 5) ? 255 : 0;
+                }
+                }
+                
+                }
                 }
                 */
                 
@@ -554,16 +575,16 @@
                 }
                 /*
                 for(uint32 x = 1; x < programContext.bitmap.info.width - 1; x = x + tileW){
-                    for(uint32 y = 1; y < programContext.bitmap.info.height - 1; y = y + tileH){
-                        for(uint32 dX = x; dX < tileW + x; dX++){
-                            for(uint32 dY = y; dY < tileH + y; dY++){
-                                programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = averages[y * programContext.bitmap.info.width + x];// (gradients[dY * programContext.bitmap.info.width + dX].size  > 5 &&
-                                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] < 40)? 255 : 0;
-                                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = gradients[dY * programContext.bitmap.info.width + dX].size > 5 ? 255 : 0;
-                            }
-                        }
-                        
-                    }
+                for(uint32 y = 1; y < programContext.bitmap.info.height - 1; y = y + tileH){
+                for(uint32 dX = x; dX < tileW + x; dX++){
+                for(uint32 dY = y; dY < tileH + y; dY++){
+                programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = averages[y * programContext.bitmap.info.width + x];// (gradients[dY * programContext.bitmap.info.width + dX].size  > 5 &&
+                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] < 40)? 255 : 0;
+                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = gradients[dY * programContext.bitmap.info.width + dX].size > 5 ? 255 : 0;
+                }
+                }
+                
+                }
                 }
                 */
                 
@@ -587,15 +608,15 @@
                         }
                         /*
                         for(uint32 dX = x; dX < tileW + x; dX++){
-                            for(uint32 dY = y; dY < tileH + y; dY++){
-                                programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = 0;
-                                if(isCandidate){
-                                    programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = averages[y * programContext.bitmap.info.width + x];
-                                }
-                                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = averages[y * programContext.bitmap.info.width + x];// (gradients[dY * programContext.bitmap.info.width + dX].size  > 5 &&
-                                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] < 40)? 255 : 0;
-                                //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = gradients[dY * programContext.bitmap.info.width + dX].size > 5 ? 255 : 0;
-                            }
+                        for(uint32 dY = y; dY < tileH + y; dY++){
+                        programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = 0;
+                        if(isCandidate){
+                        programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = averages[y * programContext.bitmap.info.width + x];
+                        }
+                        //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = averages[y * programContext.bitmap.info.width + x];// (gradients[dY * programContext.bitmap.info.width + dX].size  > 5 &&
+                        //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] < 40)? 255 : 0;
+                        //programContext.bitmap.data[dY * programContext.bitmap.info.width + dX] = gradients[dY * programContext.bitmap.info.width + dX].size > 5 ? 255 : 0;
+                        }
                         }
                         */
                     }
@@ -604,6 +625,11 @@
                 
                 
                 ASSERT(candidateCount > 0);
+                if(candidateCount == 0){
+                    printf("Error: CV failed to find middle mark\n");
+                    context.quit = true;
+                    return;
+                }
                 
                 /*
                 uint32 * candidateIndex = &PUSHA(uint32, parameters->blocksCount);
@@ -612,28 +638,28 @@
                 float32 margin = 0.1 * ((parameters->blocksCount > 2)? (1.0 / powd(2, parameters->blocksCount-2)) : 1);
                 
                 for(uint8 cropIndex = 0; cropIndex < parameters->blocksCount; cropIndex++){
-                    found[cropIndex] = false;
-                    candidateIndex[cropIndex] = 0;
-                    if(!parameters->dontInput[cropIndex]){
-                        float32 borderline = (float32)(cropIndex + 1) / (float32)parameters->blocksCount;
-                        for(uint32 ci = 0; ci < candidateCount; ci++){
-                            if(candidates[ci] > (borderline - margin) * programContext.bitmap.info.height &&
-                               candidates[ci] < (borderline + margin) * programContext.bitmap.info.height &&
-                               (!found[cropIndex] ||
-                                candidateAverages[ci] < candidateAverages[candidateIndex[cropIndex]])
-                               ){
-                               
-                                candidateIndex[cropIndex] = ci;
-                                found[cropIndex] = true;
-                                
-                            }
-                            
-                        }
-                        
-                        ASSERT(found[cropIndex]);
-                        cropImageY(&programContext.bitmap, candidates[candidateIndex[cropIndex]], 0);
-                        
-                    }
+                found[cropIndex] = false;
+                candidateIndex[cropIndex] = 0;
+                if(!parameters->dontInput[cropIndex]){
+                float32 borderline = (float32)(cropIndex + 1) / (float32)parameters->blocksCount;
+                for(uint32 ci = 0; ci < candidateCount; ci++){
+                if(candidates[ci] > (borderline - margin) * programContext.bitmap.info.height &&
+                candidates[ci] < (borderline + margin) * programContext.bitmap.info.height &&
+                (!found[cropIndex] ||
+                candidateAverages[ci] < candidateAverages[candidateIndex[cropIndex]])
+                ){
+                
+                candidateIndex[cropIndex] = ci;
+                found[cropIndex] = true;
+                
+                }
+                
+                }
+                
+                ASSERT(found[cropIndex]);
+                cropImageY(&programContext.bitmap, candidates[candidateIndex[cropIndex]], 0);
+                
+                }
                 }
                 
                 
@@ -657,6 +683,11 @@
                 }
                 
                 ASSERT(found);
+                if(!found){
+                    printf("Error: CV failed to find marks to half the image near middle of the whole picture\n");
+                    context.quit = true;
+                    return;
+                }
                 
                 uint32 blockHeight = candidates[candidateIndex];
                 uint8 totalBlocks = 0;
@@ -679,6 +710,8 @@
         uint32 markOffset;
         
         float32 bordersX;
+        
+        
         if(!parameters->isManual || programContext.state == ProgramState_SelectMarks){
             
             if(parameters->isManual){
@@ -695,14 +728,33 @@
                 
                 //we are going to print
                 if(parameters->labelsCount != 0 || !parameters->dontMark){
-                    
-                    
                     FileContents fontFile;
-                    readFile("font.bmp", &fontFile);
+                    bool result = readFile("font.bmp", &fontFile);
+                    ASSERT(result);
+                    if(!result){
+                        printf("Error: system failed to read font file.\n");
+                        context.quit = true;
+                        return;
+                    }
                     Image source;
-                    decodeBMP(&fontFile, &source);
-                    flipY(&source);
-                    initBitmapFont(&font, &source, source.info.width / 16); 
+                    result = decodeBMP(&fontFile, &source);
+                    if(!result){
+                        printf("Error: failed to decode BMP font file, perhaps it has incorrect format.\n");
+                        context.quit = true;
+                        return;
+                    }
+                    result = flipY(&source);
+                    if(!result){
+                        printf("Error: IP failed to flip font image.\n");
+                        context.quit = true;
+                        return;
+                    }
+                    result = initBitmapFont(&font, &source, source.info.width / 16); 
+                    if(!result){
+                        printf("Error: failed to init font file.\n");
+                        context.quit = true;
+                        return;
+                    }
                     uint32 fontSize = 24;
                     
                     
@@ -804,13 +856,30 @@
                                 break;
                             }
                         }
+                        
                         ASSERT(markIndex == parameters->targetMark);
+                        if(markIndex != parameters->targetMark){
+                            printf("Error: IP failed to find desired mark.\n");
+                            context.quit = true;
+                            return;
+                        }
                         
                         markOffset = fontSize * strlen(parameters->markText);
                         
-                        scaleCanvas(&programContext.bitmap, programContext.bitmap.info.width + markOffset, programContext.bitmap.info.height, markOffset, 0);
+                        result = scaleCanvas(&programContext.bitmap, programContext.bitmap.info.width + markOffset, programContext.bitmap.info.height, markOffset, 0);
                         
-                        printToBitmap(&programContext.bitmap, 0, mark.startY, parameters->markText, &font, fontSize);
+                        if(!result){
+                            printf("Error: IP failed to scale canvas.\n");
+                            context.quit = true;
+                            return;
+                        }
+                        
+                        result = printToBitmap(&programContext.bitmap, 0, mark.startY, parameters->markText, &font, fontSize);
+                        if(!result){
+                            printf("Error: failed to print mark to the bitmap.\n");
+                            context.quit = true;
+                            return;
+                        }
                     }
                     /*
                     FileContents bmp2;
@@ -828,16 +897,86 @@
         
         if(!parameters->isManual || programContext.state == ProgramState_Shutdown){
             
+            bool result;
+            if(parameters->isManual){
+                
+                
+                v2 down = V2(0, 1);
+                float32 degAngle = radAngle(programContext.rotation, down) * 180 / PI;
+                if(det(programContext.rotation, down) < 0){
+                    degAngle *= -1;
+                }
+                
+                float32 radAngle = degToRad(degAngle);
+                
+                result = rotateImage(&programContext.bitmap, degAngle, programContext.rotationCenter.x, programContext.rotationCenter.y);
+                
+                dv2 rotationCenter = {(int32)(programContext.rotationCenter.x * programContext.bitmap.info.width), (int32)(programContext.rotationCenter.y * programContext.bitmap.info.height)};
+                
+                float32 scaleX = (float32) programContext.bitmap.info.width / renderer.drawBitmapData.info.width;
+                float32 scaleY = (float32) programContext.bitmap.info.height / renderer.drawBitmapData.info.height;
+                
+                //rescale the points to fit the original bitmap data
+                for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
+                    programContext.sortedPoints[i].x = (int32)(programContext.sortedPoints[i].x * scaleX);
+                    programContext.sortedPoints[i].y = (int32)(programContext.sortedPoints[i].y * scaleY);;
+                }
+                
+                //rotate the points too
+                for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
+                    programContext.sortedPoints[i] = translate(programContext.sortedPoints[i],
+                                                               -rotationCenter);
+                }
+                
+                //rotate the points too
+                for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
+                    v2 res = rotate(programContext.sortedPoints[i], radAngle);
+                    programContext.sortedPoints[i] = {(int32)res.x, (int32)res.y};
+                }
+                
+                //rotate the points too
+                for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
+                    programContext.sortedPoints[i] = translate(programContext.sortedPoints[i],rotationCenter);
+                }
+                
+                //crop that motherfucker
+                
+                uint32 leftX = (programContext.sortedPoints[0].x + programContext.sortedPoints[2].x) / 2;
+                uint32 rightX = (programContext.sortedPoints[1].x + programContext.sortedPoints[3].x) / 2;
+                
+                uint32 topY = (programContext.sortedPoints[0].y + programContext.sortedPoints[1].y) / 2;
+                uint32 botY = (programContext.sortedPoints[2].y + programContext.sortedPoints[3].y) / 2;
+                result = cropImageY(&programContext.bitmap, botY, topY) && cropImageX(&programContext.bitmap, leftX, rightX);
+                ASSERT(result);
+                if(!result){
+                    printf("Error: IP failed to crop the image\n");
+                    context.quit = true;
+                    return;
+                }
+                
+            }
+            
             
             
             if(parameters->labelsCount != 0){
-                scaleCanvas(&programContext.bitmap, programContext.bitmap.info.width, programContext.bitmap.info.height + colW, 0, 0);
+                INV;
+                result = scaleCanvas(&programContext.bitmap, programContext.bitmap.info.width, programContext.bitmap.info.height + colW, 0, 0);
+                if(!result){
+                    printf("Error: IP failed to scale image for the labels.\n");
+                    context.quit = true;
+                    return;
+                }
                 char stamp[2];
                 stamp[1] = '\0';
                 uint8 symbolIndex = parameters->beginningSymbolIndex;
                 for(uint8 ci = 1; ci < parameters->columns; ci++){
                     stamp[0] = parameters->labels[symbolIndex];
-                    printToBitmap(&programContext.bitmap, markOffset + ci*colW + (uint32)((bordersX/2)*programContext.bitmap.info.width), programContext.bitmap.info.height - colW, stamp , &font, colW);
+                    result = printToBitmap(&programContext.bitmap, markOffset + ci*colW + (uint32)((bordersX/2)*programContext.bitmap.info.width), programContext.bitmap.info.height - colW, stamp , &font, colW);
+                    if(!result){
+                        printf("Error: Iailed to print label.\n");
+                        context.quit = true;
+                        return;
+                    }
                     symbolIndex = (symbolIndex + 1) % parameters->labelsCount;
                 }
             }
@@ -852,9 +991,18 @@
             }
             
             FileContents tiff;
-            encodeBMP(&programContext.bitmap, &tiff);
-            saveFile(parameters->outputfile, &tiff);
-            
+            result = encodeTiff(&programContext.bitmap, &tiff);
+            if(!result){
+                printf("Error: failed to encode image into the TIF.\n");
+                context.quit = true;
+                return;
+            }
+            result = saveFile(parameters->outputfile, &tiff);
+            if(!result){
+                printf("Error: System failed to save image into the file.\n");
+                context.quit = true;
+                return;
+            }
             POPI;
             
             context.quit = true;
