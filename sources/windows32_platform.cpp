@@ -478,6 +478,7 @@
                                                     DispatchMessage(&msg);
                                                 }
                                                 
+                                                //todo, platform independent input processing
                                                 if(programContext.pointsCount == 2 && programContext.state == ProgramState_SelectCorners){
                                                     dv2 lineVec = programContext.points[1] - programContext.points[0];
                                                     dv2 perpVec = {-lineVec.y, lineVec.x};
@@ -499,13 +500,22 @@
                                                     dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
                                                     dv2 projcast2 = projcast1 + programContext.sortedPoints[1];
                                                     projcast1 += programContext.sortedPoints[0];
-                                                    if(projcast1.y > programContext.sortedPoints[2].y){
-                                                        projcast1 = programContext.sortedPoints[2];
-                                                        projcast2 = programContext.sortedPoints[3];
-                                                    }else if(projcast1.y < programContext.sortedPoints[0].y){
+                                                    
+                                                    if(projcast1.y < programContext.sortedPoints[0].y){
                                                         projcast1 = programContext.sortedPoints[0];
                                                         projcast2 = programContext.sortedPoints[1];
                                                     }
+                                                    dv2 offset = projcast1 - programContext.sortedPoints[0];
+                                                    if((projcast1 + ((parameters->blocksCount - 1)*offset)).y > programContext.sortedPoints[2].y){
+                                                        v2 newOffset = normalize(offset) * (length(programContext.sortedPoints[2] - programContext.sortedPoints[0])/parameters->blocksCount);;
+                                                        offset = {(int32) newOffset.x, (int32) newOffset.y};
+                                                        projcast1 = programContext.sortedPoints[0] + offset;
+                                                        projcast2 = programContext.sortedPoints[1] + offset;
+                                                    }
+                                                    
+                                                    
+                                                    
+                                                    
                                                     programContext.line[0] = projcast1;
                                                     programContext.line[1] = projcast2;
                                                     
@@ -537,6 +547,12 @@
                                                 }else{
                                                     if(GetCursor() != NULL){
                                                         cursor = SetCursor(NULL);
+                                                    }
+                                                }
+                                                
+                                                if(programContext.state == ProgramState_SelectMarks || programContext.state == ProgramState_SelectHalf){
+                                                    if(GetCursor() == NULL){
+                                                        cursor = SetCursor(cursor);
                                                     }
                                                 }
                                                 
@@ -591,11 +607,49 @@
                                                     drawLine(&renderingTarget, &programContext.sortedPoints[3], &programContext.sortedPoints[2], red);
                                                     drawLine(&renderingTarget, &programContext.sortedPoints[2], &programContext.sortedPoints[0], red);
                                                     
+                                                    
+                                                    
                                                     if(programContext.state >= ProgramState_SelectHalf){
-                                                        drawLine(&renderingTarget, &programContext.line[0], &programContext.line[1], red);
+                                                        
+                                                        dv2 line[2];
+                                                        
+                                                        if(programContext.state == ProgramState_SelectHalf){
+                                                            line[0] = programContext.line[0];
+                                                            line[1] = programContext.line[1];
+                                                        }else{
+                                                            line[0] = programContext.half[0];
+                                                            line[1] = programContext.half[1];
+                                                        }
+                                                        
+                                                        dv2 pt1;
+                                                        dv2 pt2;
+                                                        for(uint8 i = 0; i < parameters->blocksCount; i++){
+                                                            dv2 shift = i * (line[0] - programContext.sortedPoints[0]);
+                                                            pt1 = line[0] + shift;
+                                                            pt2 = line[1] + shift;
+                                                            drawLine(&renderingTarget, &pt1, &pt2, red);
+                                                            if(parameters->dontInput[i]){
+                                                                dv2 shift2 = (i - 1) * (line[0] - programContext.sortedPoints[0]);
+                                                                dv2 pt1p = line[0] + shift2;
+                                                                dv2 pt2p = line[1] + shift2;
+                                                                drawLine(&renderingTarget, &pt1p, &pt2, red);
+                                                                drawLine(&renderingTarget, &pt2p, &pt1, red);
+                                                            }
+                                                        }
+                                                        
+                                                        drawLine(&renderingTarget, &pt1, &programContext.sortedPoints[3], red);
+                                                        drawLine(&renderingTarget, &pt2, &programContext.sortedPoints[2], red);
+                                                        
                                                     }
                                                     if(programContext.state > ProgramState_SelectHalf){
-                                                        drawLine(&renderingTarget, &programContext.half[0], &programContext.half[1], red);
+                                                        for(uint8 i = 0; i < parameters->blocksCount; i++){
+                                                            if(!parameters->dontInput[i]){
+                                                                dv2 shift = i * (programContext.half[0] - programContext.sortedPoints[0]);
+                                                                dv2 pt1 = programContext.line[0] + shift;
+                                                                dv2 pt2 = programContext.line[1] + shift;
+                                                                drawLine(&renderingTarget, &pt1, &pt2, red);
+                                                            }
+                                                        }
                                                     }
                                                     
                                                 }
