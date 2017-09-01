@@ -51,6 +51,7 @@
 #include "windows_io.cpp"
 #include "windows_filesystem.cpp"
 #include "util_image.cpp"
+#include "util_graphics.cpp"
 #include "util_conv.cpp"
     
     
@@ -234,44 +235,6 @@
         
         printf(" outputfile\n  - where to save the ouput to. THIS FILE WILL BE OVERWRITTEN\n"); 
         
-    }
-    
-    static inline void drawLine(dv2 * from, dv2 * to){
-        
-        uint32 minY = MIN(from->y, to->y);
-        uint32 maxY = from->y == minY ? to->y : from->y;
-        uint32 minX = MIN(from->x, to->x);
-        uint32 maxX = from->x == minX ? to->x : from->x;
-        
-        bool vertical = minX == maxX;
-        
-        float32 k;
-        float32 q;
-        
-        if(!vertical){
-            k = (float32)((int32)from->y - (int32)to->y)/((int32)from->x - (int32)to->x);
-            q = (int32)to->y - k*(int32)to->x;
-        }
-        
-        for(uint32 h = minY; h < renderer.height && h < maxY; h++){
-            uint32 pitch = h*renderer.width;
-            
-            for(uint32 w = minX; w < renderer.width && w < maxX; w++){
-                
-                
-                if(vertical){
-                    renderer.drawbuffer[pitch + w] = 0x00FF0000;
-                }else{
-                    uint32 linepoint = (int32)(k*w + q);
-                    if( h <= linepoint + 3 && h >= linepoint - 3){
-                        renderer.drawbuffer[pitch + w] = 0x00FF0000;
-                    }
-                    
-                    
-                    
-                }
-            }
-        }
     }
     
     
@@ -478,6 +441,16 @@
                             }else{
                                 
                                 if(parameters->isManual){
+                                    Image renderingTarget;
+                                    Color red;
+                                    Color green;
+                                    red.full = 0x00FF0000;
+                                    green.full = 0x0000FF00;
+                                    renderingTarget.info.bitsPerSample = 8;
+                                    renderingTarget.info.samplesPerPixel = 4;
+                                    renderingTarget.info.interpretation = BitmapInterpretationType_ARGB;
+                                    renderingTarget.info.origin = BitmapOriginType_TopLeft;
+                                    
                                     WNDCLASSEX style = {};
                                     style.cbSize = sizeof(WNDCLASSEX);
                                     style.style = CS_OWNDC;
@@ -494,6 +467,7 @@
                                             HCURSOR cursor = (HCURSOR) LoadImage(context.hInstance, IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE);
                                             
                                             while (!context.quit) {
+                                                
                                                 
                                                 programContext.input = {};
                                                 
@@ -567,10 +541,14 @@
                                                 }
                                                 
                                                 
-                                                run(parameters);
+                                                runManual(parameters);
                                                 
                                                 
+                                                renderingTarget.info.width = renderer.width;
+                                                renderingTarget.info.height = renderer.height;
+                                                renderingTarget.data = (byte *)renderer.drawbuffer;
                                                 
+                                                //todo: separate rendering routines before porting to other machines
                                                 
                                                 /**
                                                 draw basic image
@@ -580,38 +558,44 @@
                                                     
                                                     for(uint32 w = 0; w < renderer.width; w++){
                                                         
-                                                        if(programContext.pointsCount <= 1 &&(h == programContext.mouse.y || w == programContext.mouse.x)){
-                                                            renderer.drawbuffer[pitch + w] = 0x0000FF00;
-                                                        }
-                                                        else{
-                                                            renderer.drawbuffer[pitch + w] = ((uint32 *)renderer.drawBitmapData.data)[pitch + w];
-                                                            
-                                                        }
+                                                        ((uint32 *)renderingTarget.data)[pitch + w] = ((uint32 *)renderer.drawBitmapData.data)[pitch + w];
+                                                        
+                                                        
                                                     }
                                                 }
                                                 
+                                                if(programContext.pointsCount <= 1){
+                                                    dv2 tmp1 = {(int32)programContext.mouse.x, 0};
+                                                    dv2 tmp2 = {(int32)programContext.mouse.x, (int32)renderingTarget.info.height};
+                                                    drawLine(&renderingTarget, &tmp1, &tmp2, green);
+                                                    tmp1 = {0, (int32)programContext.mouse.y};
+                                                    tmp2 = {(int32)renderingTarget.info.width, (int32)programContext.mouse.y};
+                                                    drawLine(&renderingTarget, &tmp1, &tmp2, green);
+                                                }
+                                                
+                                                
                                                 if(programContext.pointsCount  == 1){
-                                                    drawLine(&programContext.points[0], &programContext.mouse);
+                                                    drawLine(&renderingTarget, &programContext.points[0], &programContext.mouse, red);
                                                 }else if(programContext.pointsCount == 2){
-                                                    drawLine(&programContext.points[0], &programContext.points[1]);
+                                                    drawLine(&renderingTarget, &programContext.points[0], &programContext.points[1], red);
                                                     
-                                                    drawLine(&programContext.points[0], &programContext.line[0]);
-                                                    drawLine(&programContext.points[1], &programContext.line[1]);
-                                                    drawLine(&programContext.line[0], &programContext.line[1]);
+                                                    drawLine(&renderingTarget, &programContext.points[0], &programContext.line[0], red);
+                                                    drawLine(&renderingTarget, &programContext.points[1], &programContext.line[1], red);
+                                                    drawLine(&renderingTarget, &programContext.line[0], &programContext.line[1], red);
                                                     
                                                     
                                                 }else if(programContext.pointsCount == 4){
                                                     //top left to bot right...
-                                                    drawLine(&programContext.sortedPoints[0], &programContext.sortedPoints[1]);
-                                                    drawLine(&programContext.sortedPoints[1], &programContext.sortedPoints[3]);
-                                                    drawLine(&programContext.sortedPoints[3], &programContext.sortedPoints[2]);
-                                                    drawLine(&programContext.sortedPoints[2], &programContext.sortedPoints[0]);
+                                                    drawLine(&renderingTarget, &programContext.sortedPoints[0], &programContext.sortedPoints[1], red);
+                                                    drawLine(&renderingTarget, &programContext.sortedPoints[1], &programContext.sortedPoints[3], red);
+                                                    drawLine(&renderingTarget, &programContext.sortedPoints[3], &programContext.sortedPoints[2], red);
+                                                    drawLine(&renderingTarget, &programContext.sortedPoints[2], &programContext.sortedPoints[0], red);
                                                     
                                                     if(programContext.state >= ProgramState_SelectHalf){
-                                                        drawLine(&programContext.line[0], &programContext.line[1]);
+                                                        drawLine(&renderingTarget, &programContext.line[0], &programContext.line[1], red);
                                                     }
                                                     if(programContext.state > ProgramState_SelectHalf){
-                                                        drawLine(&programContext.half[0], &programContext.half[1]);
+                                                        drawLine(&renderingTarget, &programContext.half[0], &programContext.half[1], red);
                                                     }
                                                     
                                                 }
@@ -634,7 +618,7 @@
                                     
                                 }else{
                                     
-                                    run(parameters);
+                                    runAutomatic(parameters);
                                 }
                             }
                         }

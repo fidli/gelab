@@ -75,7 +75,52 @@
         }
     }
     
-    void run(RunParameters * parameters){
+    bool openFiles(const RunParameters * parameters){
+        FileContents imageFile;
+        
+        bool result = readFile(parameters->inputfile, &imageFile);
+        ASSERT(result);
+        if(result == false){
+            printf("Error: failed to read file contents\n");
+            context.quit = true;
+            return false;
+        }
+        result = decodeTiff(&imageFile, &programContext.bitmap);
+        ASSERT(result);
+        if(result == false){
+            printf("Error: failed to decode tiff file\n");
+            context.quit = true;
+            return false;
+        }
+        
+        ASSERT(programContext.bitmap.info.bitsPerSample * programContext.bitmap.info.samplesPerPixel == 8);
+        if(programContext.bitmap.info.bitsPerSample * programContext.bitmap.info.samplesPerPixel != 8 || programContext.bitmap.info.interpretation != BitmapInterpretationType_GrayscaleBW01){
+            printf("Error: invalid image format (is not grayscale?)\n");
+            context.quit = true;
+            return false;
+        }
+        return true;
+    }
+    
+    bool saveFiles(const RunParameters * parameters){
+        
+        FileContents tiff;
+        bool result = encodeTiff(&programContext.bitmap, &tiff);
+        if(!result){
+            printf("Error: failed to encode image into the TIF.\n");
+            context.quit = true;
+            return false;
+        }
+        result = saveFile(parameters->outputfile, &tiff);
+        if(!result){
+            printf("Error: System failed to save image into the file.\n");
+            context.quit = true;
+            return false;
+        }
+        return true;
+    }
+    
+    void runAutomatic(RunParameters * parameters){
         
         if(!parameters->isManual || programContext.state == ProgramState_Init){
             FileContents imageFile;
@@ -1008,6 +1053,291 @@
             context.quit = true;
             
         }
+        
+        
+    }
+    
+    
+    
+    void runManual(RunParameters * parameters){
+        
+        switch(programContext.state){
+            case ProgramState_Init:{
+                if(!openFiles(parameters)){
+                    return;
+                };
+                
+                //resize
+                Image draw;
+                Image tmp;
+                draw.info = programContext.bitmap.info;
+                draw.info.samplesPerPixel = 4;
+                tmp.info = draw.info;
+                tmp.data = (byte *) &PPUSHA(uint32, draw.info.width * draw.info.height);
+                draw.data = (byte *) &PPUSHA(uint32, draw.info.width * draw.info.height);
+                for(uint32 i = 0; i < programContext.bitmap.info.width * programContext.bitmap.info.width; i++){
+                    for(uint8 j = 0; j < 3; j++){
+                        tmp.data[4*i + j] = programContext.bitmap.data[i];
+                    }
+                    
+                    
+                }
+                bool result = scaleImage(&tmp, &draw, renderer.width, renderer.height);
+                ASSERT(result);
+                if(result == false){
+                    printf("Error: IP failed to scale rendering image\n");
+                    context.quit = true;
+                    return;
+                }
+                renderer.drawBitmapData = draw;
+                renderer.originalBitmapData = tmp;
+                
+                programContext.state = ProgramState_SelectCorners;
+                
+            }break;
+            case ProgramState_SelectCorners:{
+                if(programContext.pointsCount == 0){
+                    if(programContext.input.click == true){
+                        programContext.points[programContext.pointsCount++] = programContext.mouse;
+                    }
+                    if(programContext.input.back == true){
+                        context.quit = true;
+                    }
+                }else if(programContext.pointsCount == 1){
+                    if(programContext.input.click == true){
+                        programContext.points[programContext.pointsCount++] = programContext.mouse;
+                    }
+                    if(programContext.input.back == true){
+                        programContext.pointsCount--;
+                    }
+                }else if(programContext.pointsCount == 2){
+                    if(programContext.input.click == true){
+                        programContext.points[2] = programContext.line[0];
+                        programContext.points[3] = programContext.line[1];
+                        
+                        programContext.pointsCount = 4;
+                        for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
+                            programContext.sortedPoints[i] = programContext.points[i];
+                        }
+                        
+                        //sort stable by left top corner to right bot corner
+                        //closest to the origin is top left corner
+                        insertSort((byte *) programContext.sortedPoints, sizeof(programContext.sortedPoints[0]), ARRAYSIZE(programContext.sortedPoints), [](void * a, void *b) -> int8{
+                                   int32 y1 = ((dv2 *) a)->y;
+                                   int32 y2 = ((dv2 *) b)->y;
+                                   
+                                   int32 x1 = ((dv2 *) a)->x;
+                                   int32 x2 = ((dv2 *) b)->x;
+                                   int32 A = y1+x1;
+                                   int32 B = y2+x2;
+                                   if(A > B){
+                                   return 1;
+                                   }else if(A < B){
+                                   return -1;
+                                   }
+                                   return 0
+                                   ;});
+                        //the rightmost with smallest Y is second
+                        insertSort((byte *) &programContext.sortedPoints[1], sizeof(programContext.sortedPoints[0]), ARRAYSIZE(programContext.sortedPoints) - 1, [](void * a, void *b) -> int8{
+                                   int32 x1 = ((dv2 *) a)->x;
+                                   int32 x2 = ((dv2 *) b)->x;
+                                   int32 A = x1;
+                                   int32 B = x2;
+                                   if(A < B){
+                                   return 1;
+                                   }else if(A > B){
+                                   return -1;
+                                   }
+                                   return 0
+                                   ;});
+                        
+                        uint8 leastIndex = 1;
+                        for(uint8 i = leastIndex + 1; i < ARRAYSIZE(programContext.sortedPoints) - 1; i++){
+                            if(programContext.sortedPoints[i].y < programContext.sortedPoints[leastIndex].y){
+                                leastIndex = i;
+                            }
+                        }
+                        dv2 tmp = programContext.sortedPoints[1];
+                        programContext.sortedPoints[1] = programContext.sortedPoints[leastIndex];
+                        programContext.sortedPoints[leastIndex] = tmp;
+                        
+                        //now the remaining be sorted by x
+                        insertSort((byte *) &programContext.sortedPoints[2], sizeof(programContext.sortedPoints[0]), ARRAYSIZE(programContext.sortedPoints) - 2, [](void * a, void *b) -> int8{
+                                   int32 x1 = ((dv2 *) a)->x;
+                                   int32 x2 = ((dv2 *) b)->x;
+                                   int32 A = x1;
+                                   int32 B = x2;
+                                   if(A > B){
+                                   return 1;
+                                   }else if(A < B){
+                                   return -1;
+                                   }
+                                   return 0
+                                   ;});
+                        
+                        
+                        
+                        programContext.rotation = {(float32)(programContext.sortedPoints[2].x - programContext.sortedPoints[0].x), (float32)(programContext.sortedPoints[2].y - programContext.sortedPoints[0].y)};
+                        programContext.rotationCenter = {((float32)programContext.sortedPoints[0].x)/renderer.drawBitmapData.info.width, ((float32)programContext.sortedPoints[0].y)/renderer.drawBitmapData.info.height};
+                        bool check = programContext.sortedPoints[0].x < programContext.sortedPoints[1].x && programContext.sortedPoints[0].y < programContext.sortedPoints[2].y &&
+                            programContext.sortedPoints[0].y < programContext.sortedPoints[3].y &&
+                            programContext.sortedPoints[2].x < programContext.sortedPoints[3].x;
+                        ASSERT(check);
+                        
+                        programContext.state = ProgramState_SelectHalf;
+                        
+                    }
+                    
+                }
+                
+            }break;
+            case ProgramState_SelectHalf:{
+                if(programContext.input.back == true){
+                    programContext.pointsCount = 2;
+                    programContext.state = ProgramState_SelectCorners;
+                }
+                if(programContext.input.click == true){
+                    programContext.half[0] = programContext.line[0];
+                    programContext.half[1] = programContext.line[1];
+                    programContext.state = ProgramState_SelectMarks;
+                }
+            }break;
+            case ProgramState_SelectMarks:{
+                if(programContext.input.back == true){
+                    programContext.state = ProgramState_SelectHalf;
+                }
+                if(programContext.input.click == true){
+                    programContext.state = ProgramState_Shutdown;
+                }
+            }break;
+            case ProgramState_Shutdown:{
+                bool result = false;
+                
+                
+                v2 down = V2(0, 1);
+                float32 degAngle = radAngle(programContext.rotation, down) * 180 / PI;
+                if(det(programContext.rotation, down) < 0){
+                    degAngle *= -1;
+                }
+                
+                float32 radAngle = degToRad(degAngle);
+                
+                result = rotateImage(&programContext.bitmap, degAngle, programContext.rotationCenter.x, programContext.rotationCenter.y);
+                
+                dv2 rotationCenter = {(int32)(programContext.rotationCenter.x * programContext.bitmap.info.width), (int32)(programContext.rotationCenter.y * programContext.bitmap.info.height)};
+                
+                float32 scaleX = (float32) programContext.bitmap.info.width / renderer.drawBitmapData.info.width;
+                float32 scaleY = (float32) programContext.bitmap.info.height / renderer.drawBitmapData.info.height;
+                
+                //rescale the points to fit the original bitmap data
+                for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
+                    programContext.sortedPoints[i].x = (int32)(programContext.sortedPoints[i].x * scaleX);
+                    programContext.sortedPoints[i].y = (int32)(programContext.sortedPoints[i].y * scaleY);;
+                }
+                
+                //rotate the points too
+                for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
+                    programContext.sortedPoints[i] = translate(programContext.sortedPoints[i],
+                                                               -rotationCenter);
+                }
+                
+                //rotate the points too
+                for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
+                    v2 res = rotate(programContext.sortedPoints[i], radAngle);
+                    programContext.sortedPoints[i] = {(int32)res.x, (int32)res.y};
+                }
+                
+                //rotate the points too
+                for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints); i++){
+                    programContext.sortedPoints[i] = translate(programContext.sortedPoints[i],rotationCenter);
+                }
+                
+                //crop that motherfucker
+                
+                uint32 leftX = (programContext.sortedPoints[0].x + programContext.sortedPoints[2].x) / 2;
+                uint32 rightX = (programContext.sortedPoints[1].x + programContext.sortedPoints[3].x) / 2;
+                
+                uint32 topY = (programContext.sortedPoints[0].y + programContext.sortedPoints[1].y) / 2;
+                uint32 botY = (programContext.sortedPoints[2].y + programContext.sortedPoints[3].y) / 2;
+                result = cropImageY(&programContext.bitmap, botY, topY) && cropImageX(&programContext.bitmap, leftX, rightX);
+                ASSERT(result);
+                if(!result){
+                    printf("Error: IP failed to crop the image\n");
+                    context.quit = true;
+                    return;
+                }
+                
+                saveFiles(parameters);
+                context.quit = true;
+            }break;
+            default:{
+                INV;
+            }break;
+        }
+        
+        
+        /*
+        PixelGradient * gradients;
+        
+        
+        BitmapFont font;
+        
+        uint32 colW;
+        uint32 markOffset;
+        
+        float32 bordersX;
+        
+        
+        if(!parameters->isManual || programContext.state == ProgramState_Shutdown){
+        
+            bool result;
+            if(parameters->isManual){
+            
+            }
+            
+            
+            
+            if(parameters->labelsCount != 0){
+                INV;
+                result = scaleCanvas(&programContext.bitmap, programContext.bitmap.info.width, programContext.bitmap.info.height + colW, 0, 0);
+                if(!result){
+                    printf("Error: IP failed to scale image for the labels.\n");
+                    context.quit = true;
+                    return;
+                }
+                char stamp[2];
+                stamp[1] = '\0';
+                uint8 symbolIndex = parameters->beginningSymbolIndex;
+                for(uint8 ci = 1; ci < parameters->columns; ci++){
+                    stamp[0] = parameters->labels[symbolIndex];
+                    result = printToBitmap(&programContext.bitmap, markOffset + ci*colW + (uint32)((bordersX/2)*programContext.bitmap.info.width), programContext.bitmap.info.height - colW, stamp , &font, colW);
+                    if(!result){
+                        printf("Error: Iailed to print label.\n");
+                        context.quit = true;
+                        return;
+                    }
+                    symbolIndex = (symbolIndex + 1) % parameters->labelsCount;
+                }
+            }
+            
+            
+            
+            
+            if(parameters->invertColors){
+                for(uint32 i = 0; i < programContext.bitmap.info.width * programContext.bitmap.info.height * programContext.bitmap.info.bitsPerSample * programContext.bitmap.info.samplesPerPixel; i++){
+                    programContext.bitmap.data[i] = 255 - programContext.bitmap.data[i]; 
+                }
+            }
+            
+            */
+        
+        
+        
+        
+        
+        
+        
+        
         
         
 }
