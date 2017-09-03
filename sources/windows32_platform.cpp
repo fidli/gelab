@@ -273,6 +273,7 @@
                         parameters->labelsCount = 0;
                         parameters->targetMark = 0;
                         parameters->columns = 0;
+                        parameters->skip = 0;
                         parameters->isManual = false;
                         for(int32 i = 0; i < ARRAYSIZE(parameters->dontInput); i++){
                             parameters->dontInput[i] = false;
@@ -429,6 +430,13 @@
                                 senseCheck = false;
                                 printf("Error: Block list contains block with higher index than block count\n");
                             }
+                            if(highestBlockList > 0){
+                                for(uint8 i = 0; i < parameters->blocksCount; i++){
+                                    if(parameters->dontInput[i]){
+                                        parameters->skip++;
+                                    }
+                                }
+                            }
                             
                             if(parameters->labelsCount > 0 && parameters->columns == 0){
                                 senseCheck = false;
@@ -555,6 +563,7 @@
                                                         cursor = SetCursor(cursor);
                                                     }
                                                 }
+                                                
                                                 
                                                 
                                                 runManual(parameters);
@@ -735,6 +744,7 @@
         programContext.state = ProgramState_Init;
         programContext.pointsCount = 0;
         programContext.input = {};
+        
         int result = main(argv,argc);
         LocalFree(argv);
         ExitProcess(result);
