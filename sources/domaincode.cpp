@@ -15,6 +15,8 @@
     struct UserInput{
         bool click;
         bool back;
+        bool left;
+        bool right;
     };
     
     
@@ -56,6 +58,7 @@
         
         bool dontMark;
         bool isManual;
+        bool forceSave;
     };
     
     struct PixelGradient{
@@ -1000,24 +1003,23 @@
                         programContext.sortedPoints[1] = programContext.sortedPoints[leastIndex];
                         programContext.sortedPoints[leastIndex] = tmp;
                         
-                        //now the remaining be sorted by x
+                        //now the remaining be sorted by x DESC
                         insertSort((byte *) &programContext.sortedPoints[2], sizeof(programContext.sortedPoints[0]), ARRAYSIZE(programContext.sortedPoints) - 2, [](void * a, void *b) -> int8{
                                    int32 x1 = ((dv2 *) a)->x;
                                    int32 x2 = ((dv2 *) b)->x;
                                    int32 A = x1;
                                    int32 B = x2;
                                    if(A > B){
-                                   return 1;
-                                   }else if(A < B){
                                    return -1;
+                                   }else if(A < B){
+                                   return 1;
                                    }
                                    return 0
                                    ;});
                         
                         
                         
-                        programContext.rotation = {(float32)(programContext.sortedPoints[2].x - programContext.sortedPoints[0].x), (float32)(programContext.sortedPoints[2].y - programContext.sortedPoints[0].y)};
-                        programContext.rotationCenter = {((float32)programContext.sortedPoints[0].x)/renderer.drawBitmapData.info.width, ((float32)programContext.sortedPoints[0].y)/renderer.drawBitmapData.info.height};
+                        
                         /*bool check = programContext.sortedPoints[0].x < programContext.sortedPoints[1].x && programContext.sortedPoints[0].y < programContext.sortedPoints[2].y &&
                         programContext.sortedPoints[0].y < programContext.sortedPoints[3].y &&
                         programContext.sortedPoints[2].x < programContext.sortedPoints[3].x;
@@ -1036,14 +1038,26 @@
             case ProgramState_SelectHalf:{
                 if(parameters->blocksCount == 1){
                     programContext.state = ProgramState_SelectMarks;
-                    programContext.half[0] = programContext.sortedPoints[2];
-                    programContext.half[1] = programContext.sortedPoints[3];
+                    programContext.half[0] = programContext.sortedPoints[3];
+                    programContext.half[1] = programContext.sortedPoints[2];
                 }else{
                     if(programContext.input.back == true){
                         programContext.pointsCount = 2;
                         programContext.state = ProgramState_SelectCorners;
+                    }else if(programContext.input.right == true){
+                        dv2 tmp = programContext.sortedPoints[0];
+                        for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints) - 1; i++){
+                            programContext.sortedPoints[i] = programContext.sortedPoints[i+1];
+                        }
+                        programContext.sortedPoints[3] = tmp;
+                    }else if(programContext.input.left == true){
+                        dv2 tmp = programContext.sortedPoints[3];
+                        for(uint8 i = 3; i > 0; i--){
+                            programContext.sortedPoints[i] = programContext.sortedPoints[i-1];
+                        }
+                        programContext.sortedPoints[0] = tmp;
                     }
-                    if(programContext.input.click == true){
+                    else if(programContext.input.click == true){
                         programContext.half[0] = programContext.line[0];
                         programContext.half[1] = programContext.line[1];
                         programContext.state = ProgramState_SelectMarks;
@@ -1062,15 +1076,36 @@
                         }else{
                             programContext.state = ProgramState_SelectHalf;
                         }
-                    }
-                    if(programContext.input.click == true){
+                    }else if(programContext.input.click == true){
                         programContext.mark = programContext.line[0];
                         programContext.state = ProgramState_Shutdown;
+                    }else if(parameters->blocksCount == 1){
+                        if(programContext.input.right == true){
+                            dv2 tmp = programContext.sortedPoints[0];
+                            for(uint8 i = 0; i < ARRAYSIZE(programContext.sortedPoints) - 1; i++){
+                                programContext.sortedPoints[i] = programContext.sortedPoints[i+1];
+                            }
+                            programContext.sortedPoints[3] = tmp;
+                        }else if(programContext.input.left == true){
+                            dv2 tmp = programContext.sortedPoints[3];
+                            for(uint8 i = 3; i > 0; i--){
+                                programContext.sortedPoints[i] = programContext.sortedPoints[i-1];
+                            }
+                            programContext.sortedPoints[0] = tmp;
+                        }
+                        programContext.half[0] = programContext.sortedPoints[3];
+                        programContext.half[1] = programContext.sortedPoints[2];
                     }
                 }
             }break;
             case ProgramState_Shutdown:{
                 bool result = false;
+                
+                programContext.rotation = {(float32)(programContext.sortedPoints[3].x - programContext.sortedPoints[0].x), (float32)(programContext.sortedPoints[3].y - programContext.sortedPoints[0].y)};
+                dv2 diag = programContext.sortedPoints[2] - programContext.sortedPoints[0];
+                v2 halfDiag = length(diag)/2 * normalize(diag);
+                dv2 cropCenter = programContext.sortedPoints[0] + DV2((int32)halfDiag.x, (int32)halfDiag.y);
+                programContext.rotationCenter = {((float32)cropCenter.x)/renderer.drawBitmapData.info.width, ((float32)cropCenter.y)/renderer.drawBitmapData.info.height};
                 
                 float32 scaleX = (float32) programContext.bitmap.info.width / renderer.drawBitmapData.info.width;
                 float32 scaleY = (float32) programContext.bitmap.info.height / renderer.drawBitmapData.info.height;
@@ -1141,11 +1176,28 @@
                 
                 //crop that motherfucker
                 
-                int32 leftX = (programContext.sortedPoints[0].x + programContext.sortedPoints[2].x) / 2;
-                int32 rightX = (programContext.sortedPoints[1].x + programContext.sortedPoints[3].x) / 2;
-                
-                int32 topY = (programContext.sortedPoints[0].y + programContext.sortedPoints[1].y) / 2;
-                int32 botY = (programContext.sortedPoints[2].y + programContext.sortedPoints[3].y) / 2;
+                int32 leftX = programContext.sortedPoints[0].x;
+                int32 rightX = programContext.sortedPoints[0].x;
+                int32 topY = programContext.sortedPoints[0].y;
+                int32 botY = programContext.sortedPoints[0].y;
+                for(uint8 i = 1; i < 4; i++){
+                    if(programContext.sortedPoints[i].x < leftX){
+                        leftX = programContext.sortedPoints[i].x;
+                        continue;
+                    }
+                    if(programContext.sortedPoints[i].x > rightX){
+                        rightX = programContext.sortedPoints[i].x;
+                        continue;
+                    }
+                    if(programContext.sortedPoints[i].y < topY){
+                        topY = programContext.sortedPoints[i].y;
+                        continue;
+                    }
+                    if(programContext.sortedPoints[i].y > botY){
+                        botY = programContext.sortedPoints[i].y;
+                        continue;
+                    }
+                }
                 topY = clamp(topY, 0, programContext.bitmap.info.height);
                 botY = clamp(botY, 0, programContext.bitmap.info.height);
                 leftX = clamp(leftX, 0, programContext.bitmap.info.width);

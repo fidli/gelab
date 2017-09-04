@@ -185,6 +185,12 @@
                     case VK_ESCAPE:{
                         programContext.input.back = true;
                     }break;
+                    case VK_LEFT:{
+                        programContext.input.left = true;
+                    }break;
+                    case VK_RIGHT:{
+                        programContext.input.right = true;
+                    }break;
                     default:{
                     }break;
                 };
@@ -220,11 +226,11 @@
     
     
     static inline void printHelp(const char * binaryName){
-        printf("\nUsage: %s inputfile [-b num_of_blocks] [-m \"text\" order] [-l list beginning_symbol_index -n total_column_count] [-i list] [-IM] outputfile\n\n", binaryName);
+        printf("\nUsage: %s inputfile [-b num_of_blocks] [-m \"text\" [order]] [-l list beginning_symbol_index -n total_column_count] [-i list] [-IM] [-f] outputfile\n\n", binaryName);
         printf(" inputfile\n  - original TIFF file from experiment\n\n");
         printf(" -b num_of_blocks\n  - valid range [1, 50]\n  - how many experiments are in inputfile - default: 1\n\n"); 
         
-        printf(" -m \"text\" order\n  - valid 'order' range [1, 255]\n  - find mark on place 'order' and put 'text' next to it, mark wont be added, if this is not set\n\n");
+        printf(" -m \"text\" [order]\n  - valid 'order' range [1, 255]\n  - find mark on place 'order' and put 'text' next to it, mark wont be added, if this is not set, if -M is set, [order] MUST be omitted as it has no effect\n\n");
         printf(" -l list beginning_symbol_index\n  - valid 'beginning_symbol_range' range [1, 50]\n  - 'list' are ASCII characters (one letter) labeling experiment columns in cycle starting at 'beginning_symbol_index', requires -n to be set too, columns wont be market if this is not set\n\n");
         printf(" -n total_column_count\n  - valid range [1, 255]\n  - sets the total column count that the experiment has\n\n");
         
@@ -233,7 +239,10 @@
         printf(" -I\n  - do not invert colors\n\n");
         printf(" -M\n  - crop and outline experiment manually. This option will pop up a window that requires interaction\n\n");
         
-        printf(" outputfile\n  - where to save the ouput to. THIS FILE WILL BE OVERWRITTEN\n"); 
+        printf(" -f\n  - do not prompt for file overwrite. Overwrite it.\n\n");
+        
+        
+        printf(" outputfile\n  - where to save the ouput to. If file exists, you will be asked whether to overwrite the file.\n"); 
         
     }
     
@@ -275,6 +284,7 @@
                         parameters->columns = 0;
                         parameters->skip = 0;
                         parameters->isManual = false;
+                        parameters->forceSave = false;
                         for(int32 i = 0; i < ARRAYSIZE(parameters->dontInput); i++){
                             parameters->dontInput[i] = false;
                         }
@@ -311,18 +321,22 @@
                                             i++;
                                         }break;
                                         case 'm':{
-                                            int16 mark;
-                                            if(i == argc - 3 || sscanf(argv[i+2], "%hd", &mark) != 1 || sscanf(argv[i+1], "%256%256s", parameters->markText) != 1){
+                                            int16 mark = 4068;
+                                            if(i >= argc - 2 || sscanf(argv[i+2], "%hd", &mark) || sscanf(argv[i+1], "%256%256s", parameters->markText) != 1){
                                                 printf("Error: Invalid parameter -m\n");
                                                 valid = false;
                                                 break;
                                             };
-                                            if(mark < 1 || mark > 255){
+                                            if((mark < 1 || mark > 255) && mark != 4068){
                                                 printf("Error: Invalid mark order, available range is [1,255]\n");
                                                 valid = false;
                                                 break;
                                             }
-                                            parameters->targetMark = mark-1;
+                                            if(mark == 4068){
+                                                parameters->targetMark = -1;
+                                            }else{
+                                                parameters->targetMark = mark-1;
+                                            }
                                             parameters->dontMark = false;
                                             i += 2;
                                         }break;
@@ -411,6 +425,9 @@
                                         case 'I':{
                                             parameters->invertColors = false;
                                         }break;
+                                        case 'f':{
+                                            parameters->forceSave = true;
+                                        }break;
                                         case 'M':{
                                             parameters->isManual = true;
                                         }break;
@@ -437,7 +454,10 @@
                                     }
                                 }
                             }
-                            
+                            if(!parameters->dontMark && parameters->targetMark == -1 && !parameters->isManual){
+                                senseCheck = false;
+                                printf("Error: Invalid parameter -m. Please specify mark index you would like to set.\n");
+                            }
                             if(parameters->labelsCount > 0 && parameters->columns == 0){
                                 senseCheck = false;
                                 printf("Error: Please specify also -n when specifying -l\n");
@@ -448,7 +468,27 @@
                                 printHelp(argv[0]);
                             }else{
                                 
-                                if(parameters->isManual){
+                                if(!parameters->forceSave && fileExists(parameters->outputfile)){
+                                    bool sat = false;
+                                    while(!sat){
+                                        printf("\nFile '%s' exists. Overwrite? (y/n): ", parameters->outputfile);
+                                        char reply;
+                                        while(scanf("%c", &reply) == 1){
+                                            if(reply == 'n'){
+                                                sat = true;
+                                                context.quit = true;
+                                                
+                                            }else if(reply == 'y'){
+                                                sat = true;
+                                                
+                                            }
+                                            break;
+                                        }
+                                    }
+                                    
+                                }
+                                
+                                if(!context.quit && parameters->isManual){
                                     Image renderingTarget;
                                     Color red;
                                     Color green;
@@ -501,7 +541,7 @@
                                                 }
                                                 
                                                 if(programContext.state == ProgramState_SelectHalf){
-                                                    dv2 lineVec = programContext.sortedPoints[2] - programContext.sortedPoints[0];
+                                                    dv2 lineVec = programContext.sortedPoints[3] - programContext.sortedPoints[0];
                                                     v2 unitVec = normalize(lineVec);
                                                     float32 coef = dot({(float32)programContext.mouse.x - programContext.sortedPoints[0].x, (float32)programContext.mouse.y - programContext.sortedPoints[0].y}, unitVec);
                                                     v2 perpWorld = coef * unitVec;
@@ -509,36 +549,127 @@
                                                     dv2 projcast2 = projcast1 + programContext.sortedPoints[1];
                                                     projcast1 += programContext.sortedPoints[0];
                                                     
-                                                    if(projcast1.y < programContext.sortedPoints[0].y){
-                                                        projcast1 = programContext.sortedPoints[0];
-                                                        projcast2 = programContext.sortedPoints[1];
+                                                    if(projcast1.y < programContext.sortedPoints[0].y && projcast1.y < programContext.sortedPoints[3].y){
+                                                        if(programContext.sortedPoints[0].y < programContext.sortedPoints[3].y){
+                                                            projcast1 = programContext.sortedPoints[0];
+                                                            projcast2 = programContext.sortedPoints[1];
+                                                        }else{
+                                                            projcast1 = programContext.sortedPoints[3];
+                                                            projcast2 = programContext.sortedPoints[2];
+                                                        }
                                                     }
+                                                    if(projcast1.y > programContext.sortedPoints[3].y && projcast1.y > programContext.sortedPoints[0].y){
+                                                        if(programContext.sortedPoints[3].y > programContext.sortedPoints[0].y){
+                                                            projcast1 = programContext.sortedPoints[3];
+                                                            projcast2 = programContext.sortedPoints[2];
+                                                        }else{
+                                                            projcast1 = programContext.sortedPoints[0];
+                                                            projcast2 = programContext.sortedPoints[1];
+                                                        }
+                                                    }
+                                                    if(projcast1.x < programContext.sortedPoints[0].x && projcast1.x < programContext.sortedPoints[3].x){
+                                                        if(programContext.sortedPoints[0].x < programContext.sortedPoints[3].x){
+                                                            projcast1 = programContext.sortedPoints[0];
+                                                            projcast2 = programContext.sortedPoints[1];
+                                                        }else{
+                                                            projcast1 = programContext.sortedPoints[3];
+                                                            projcast2 = programContext.sortedPoints[2];
+                                                        }
+                                                    }
+                                                    if(projcast1.x > programContext.sortedPoints[3].x && projcast1.x > programContext.sortedPoints[0].x){
+                                                        if(programContext.sortedPoints[3].x > programContext.sortedPoints[0].x){
+                                                            projcast1 = programContext.sortedPoints[3];
+                                                            projcast2 = programContext.sortedPoints[2];
+                                                        }else{
+                                                            projcast1 = programContext.sortedPoints[0];
+                                                            projcast2 = programContext.sortedPoints[1];
+                                                        }
+                                                    }
+                                                    
+                                                    
                                                     dv2 offset = projcast1 - programContext.sortedPoints[0];
-                                                    if((projcast1 + ((parameters->blocksCount - 1)*offset)).y > programContext.sortedPoints[2].y){
-                                                        v2 newOffset = normalize(offset) * (length(programContext.sortedPoints[2] - programContext.sortedPoints[0])/parameters->blocksCount);;
-                                                        offset = {(int32) newOffset.x, (int32) newOffset.y};
-                                                        projcast1 = programContext.sortedPoints[0] + offset;
-                                                        projcast2 = programContext.sortedPoints[1] + offset;
+                                                    dv2 lastProjcast = (projcast1 + ((parameters->blocksCount - 1)*offset));
+                                                    v2 newOffset = normalize(offset) * (length(programContext.sortedPoints[3] - programContext.sortedPoints[0])/parameters->blocksCount);
+                                                    offset = {(int32) newOffset.x, (int32) newOffset.y};
+                                                    
+                                                    if(lastProjcast.y < programContext.sortedPoints[0].y && lastProjcast.y < programContext.sortedPoints[3].y){
+                                                        if(programContext.sortedPoints[0].y < programContext.sortedPoints[3].y){
+                                                            projcast1 = programContext.sortedPoints[3] + offset;
+                                                            projcast2 = programContext.sortedPoints[2] + offset;
+                                                        }else{
+                                                            
+                                                            projcast1 = programContext.sortedPoints[0] + offset;
+                                                            projcast2 = programContext.sortedPoints[1] + offset;
+                                                        }
                                                     }
-                                                    
-                                                    
-                                                    
-                                                    
+                                                    if(lastProjcast.y > programContext.sortedPoints[3].y && lastProjcast.y > programContext.sortedPoints[0].y){
+                                                        if(programContext.sortedPoints[3].y > programContext.sortedPoints[0].y){
+                                                            projcast1 = programContext.sortedPoints[0] + offset;
+                                                            projcast2 = programContext.sortedPoints[1] + offset;
+                                                        }else{
+                                                            projcast1 = programContext.sortedPoints[3] + offset;
+                                                            projcast2 = programContext.sortedPoints[2] + offset;
+                                                        }
+                                                    }
+                                                    if(lastProjcast.x < programContext.sortedPoints[0].x && lastProjcast.x < programContext.sortedPoints[3].x){
+                                                        if(programContext.sortedPoints[0].x < programContext.sortedPoints[3].x){
+                                                            projcast1 = programContext.sortedPoints[3] + offset;
+                                                            projcast2 = programContext.sortedPoints[2] + offset;
+                                                        }else{
+                                                            projcast1 = programContext.sortedPoints[0] + offset;
+                                                            projcast2 = programContext.sortedPoints[1] + offset;
+                                                        }
+                                                    }
+                                                    if(lastProjcast.x > programContext.sortedPoints[3].x && lastProjcast.x > programContext.sortedPoints[0].x){
+                                                        if(programContext.sortedPoints[3].x > programContext.sortedPoints[0].x){
+                                                            projcast1 = programContext.sortedPoints[0] + offset;
+                                                            projcast2 = programContext.sortedPoints[1] + offset;
+                                                        }else{
+                                                            projcast1 = programContext.sortedPoints[3] + offset;
+                                                            projcast2 = programContext.sortedPoints[2] + offset;
+                                                        }
+                                                    }
                                                     programContext.line[0] = projcast1;
                                                     programContext.line[1] = projcast2;
                                                     
                                                 }else if(programContext.state == ProgramState_SelectMarks){
                                                     
-                                                    dv2 lineVec = programContext.sortedPoints[2] - programContext.sortedPoints[0];
+                                                    dv2 lineVec = programContext.sortedPoints[3] - programContext.sortedPoints[0];
                                                     v2 unitVec = normalize(lineVec);
                                                     float32 coef = dot({(float32)programContext.mouse.x - programContext.sortedPoints[0].x, (float32)programContext.mouse.y - programContext.sortedPoints[0].y}, unitVec);
                                                     v2 perpWorld = coef * unitVec;
                                                     dv2 projcast1 = {(int32) perpWorld.x, (int32)perpWorld.y};
                                                     projcast1 += programContext.sortedPoints[0];
-                                                    if(projcast1.y > programContext.half[0].y){
+                                                    if(projcast1.y > programContext.half[0].y && programContext.half[0].y > programContext.sortedPoints[0].y){
                                                         projcast1 = programContext.half[0];
                                                         
-                                                    }else if(projcast1.y < programContext.sortedPoints[0].y){
+                                                    }
+                                                    if(projcast1.y < programContext.half[0].y && programContext.half[0].y < programContext.sortedPoints[0].y){
+                                                        projcast1 = programContext.half[0];
+                                                        
+                                                    }
+                                                    if(projcast1.y < programContext.sortedPoints[0].y && programContext.sortedPoints[0].y < programContext.half[0].y){
+                                                        projcast1 = programContext.sortedPoints[0];
+                                                        
+                                                    }
+                                                    if(projcast1.y > programContext.sortedPoints[0].y && programContext.sortedPoints[0].y > programContext.half[0].y){
+                                                        projcast1 = programContext.sortedPoints[0];
+                                                        
+                                                    }
+                                                    
+                                                    if(projcast1.x > programContext.half[0].x && programContext.half[0].x > programContext.sortedPoints[0].x){
+                                                        projcast1 = programContext.half[0];
+                                                        
+                                                    }
+                                                    if(projcast1.x < programContext.half[0].x && programContext.half[0].x < programContext.sortedPoints[0].x){
+                                                        projcast1 = programContext.half[0];
+                                                        
+                                                    }
+                                                    if(projcast1.x < programContext.sortedPoints[0].x && programContext.sortedPoints[0].x < programContext.half[0].x){
+                                                        projcast1 = programContext.sortedPoints[0];
+                                                        
+                                                    }
+                                                    if(projcast1.x > programContext.sortedPoints[0].x && programContext.sortedPoints[0].x > programContext.half[0].x){
                                                         projcast1 = programContext.sortedPoints[0];
                                                         
                                                     }
@@ -602,19 +733,19 @@
                                                 if(programContext.pointsCount  == 1){
                                                     drawLine(&renderingTarget, &programContext.points[0], &programContext.mouse, red);
                                                 }else if(programContext.pointsCount == 2){
-                                                    drawLine(&renderingTarget, &programContext.points[0], &programContext.points[1], red);
+                                                    drawLine(&renderingTarget, &programContext.points[0], &programContext.points[1], green);
                                                     
-                                                    drawLine(&renderingTarget, &programContext.points[0], &programContext.line[0], red);
-                                                    drawLine(&renderingTarget, &programContext.points[1], &programContext.line[1], red);
-                                                    drawLine(&renderingTarget, &programContext.line[0], &programContext.line[1], red);
+                                                    drawLine(&renderingTarget, &programContext.points[0], &programContext.line[0], green);
+                                                    drawLine(&renderingTarget, &programContext.points[1], &programContext.line[1], green);
+                                                    drawLine(&renderingTarget, &programContext.line[0], &programContext.line[1], green);
                                                     
                                                     
                                                 }else if(programContext.pointsCount == 4){
-                                                    //top left to bot right...
-                                                    drawLine(&renderingTarget, &programContext.sortedPoints[0], &programContext.sortedPoints[1], red);
-                                                    drawLine(&renderingTarget, &programContext.sortedPoints[1], &programContext.sortedPoints[3], red);
-                                                    drawLine(&renderingTarget, &programContext.sortedPoints[3], &programContext.sortedPoints[2], red);
-                                                    drawLine(&renderingTarget, &programContext.sortedPoints[2], &programContext.sortedPoints[0], red);
+                                                    //round and round we go
+                                                    drawLine(&renderingTarget, &programContext.sortedPoints[0], &programContext.sortedPoints[1], green);
+                                                    drawLine(&renderingTarget, &programContext.sortedPoints[1], &programContext.sortedPoints[2], green);
+                                                    drawLine(&renderingTarget, &programContext.sortedPoints[2], &programContext.sortedPoints[3], green);
+                                                    drawLine(&renderingTarget, &programContext.sortedPoints[3], &programContext.sortedPoints[0], green);
                                                     
                                                     
                                                     
@@ -622,32 +753,55 @@
                                                         
                                                         dv2 line[2];
                                                         
+                                                        Color currentColor;
+                                                        
                                                         if(programContext.state == ProgramState_SelectHalf){
+                                                            currentColor = red;
                                                             line[0] = programContext.line[0];
                                                             line[1] = programContext.line[1];
                                                         }else{
+                                                            currentColor = green;
                                                             line[0] = programContext.half[0];
                                                             line[1] = programContext.half[1];
                                                         }
+                                                        
+                                                        float32 width = length(programContext.sortedPoints[1] - programContext.sortedPoints[0]);
+                                                        float32 height = length(programContext.sortedPoints[3] - programContext.sortedPoints[0]);
+                                                        dv2 arrow[3] = {programContext.sortedPoints[0], programContext.sortedPoints[0], programContext.sortedPoints[0]};
+                                                        v2 xOffset = normalize(programContext.sortedPoints[1] - programContext.sortedPoints[0]) * (width / 10.0f);
+                                                        v2 yOffset = normalize(programContext.sortedPoints[3] - programContext.sortedPoints[0]) * (height / 10.0f);
+                                                        
+                                                        arrow[0] += {(int32)xOffset.x, (int32)xOffset.y};
+                                                        arrow[1] += {(int32)(1.5f*xOffset.x), (int32)(1.5f*xOffset.y)};
+                                                        arrow[2] += {(int32)(2*xOffset.x), (int32)(2*xOffset.y)};
+                                                        
+                                                        arrow[0] += {(int32)yOffset.x, (int32)yOffset.y};
+                                                        arrow[1] += {(int32)(2*yOffset.x), (int32)(2*yOffset.y)};
+                                                        arrow[2] += {(int32)(yOffset.x), (int32)(yOffset.y)};
+                                                        
+                                                        drawLine(&renderingTarget, &arrow[0], &arrow[1] ,green);
+                                                        drawLine(&renderingTarget, &arrow[2], &arrow[1] ,green);
+                                                        
                                                         
                                                         dv2 pt1;
                                                         dv2 pt2;
                                                         for(uint8 i = 0; i < parameters->blocksCount; i++){
                                                             dv2 shift = i * (line[0] - programContext.sortedPoints[0]);
+                                                            
                                                             pt1 = line[0] + shift;
                                                             pt2 = line[1] + shift;
-                                                            drawLine(&renderingTarget, &pt1, &pt2, red);
+                                                            drawLine(&renderingTarget, &pt1, &pt2, currentColor);
                                                             if(parameters->dontInput[i]){
                                                                 dv2 shift2 = (i - 1) * (line[0] - programContext.sortedPoints[0]);
                                                                 dv2 pt1p = line[0] + shift2;
                                                                 dv2 pt2p = line[1] + shift2;
-                                                                drawLine(&renderingTarget, &pt1p, &pt2, red);
-                                                                drawLine(&renderingTarget, &pt2p, &pt1, red);
+                                                                drawLine(&renderingTarget, &pt1p, &pt2, currentColor);
+                                                                drawLine(&renderingTarget, &pt2p, &pt1, currentColor);
                                                             }
                                                         }
                                                         
-                                                        drawLine(&renderingTarget, &pt1, &programContext.sortedPoints[3], red);
-                                                        drawLine(&renderingTarget, &pt2, &programContext.sortedPoints[2], red);
+                                                        drawLine(&renderingTarget, &pt1, &programContext.sortedPoints[2], currentColor);
+                                                        drawLine(&renderingTarget, &pt2, &programContext.sortedPoints[3], currentColor);
                                                         
                                                     }
                                                     if(programContext.state > ProgramState_SelectHalf){
@@ -680,8 +834,9 @@
                                     }
                                     
                                 }else{
-                                    
-                                    runAutomatic(parameters);
+                                    if(!context.quit){
+                                        runAutomatic(parameters);
+                                    }
                                 }
                             }
                         }

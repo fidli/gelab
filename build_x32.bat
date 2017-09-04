@@ -1,7 +1,7 @@
 @echo off
 call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" x86
 cls
-set FILES="%cd%\sources\fix_tiff.cpp"
+set FILES="%cd%\sources\windows32_platform.cpp"
 set LIBS="Kernel32.lib" "Advapi32.lib" "Shell32.lib" "User32.lib" "Gdi32.lib"
 set BASELIB="%cd%\baselib"
 pushd build
