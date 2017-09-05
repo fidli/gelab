@@ -1,1 +1,1 @@
-call build_x32.bat
+call build_x32_release.bat

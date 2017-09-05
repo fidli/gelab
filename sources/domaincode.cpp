@@ -34,6 +34,7 @@
         v2 rotationCenter;
         dv2 mark;
         uint32 blockSize;
+        uint32 markOffset;
     };
     
     
@@ -148,10 +149,31 @@
     
     bool postProcess(const RunParameters * parameters){
         
+        bool result;
+        
+        //now use only the valid blocks
+        uint8 skipped = 0;
+        for(uint8 i = 0; i < parameters->blocksCount; i++){
+            if(parameters->dontInput[i]){
+                int32 from = ((i+1-skipped) * programContext.blockSize);
+                int32 to = (i-skipped) * programContext.blockSize;
+                moveImageBlock(&programContext.bitmap, from, to, programContext.bitmap.info.height - from);
+                skipped++;
+            }
+        }
+        result = cropImageY(&programContext.bitmap, (parameters->blocksCount-skipped)*programContext.blockSize, 0);
+        
+        if(!result){
+            printf("Error: IP failed to crop the image\n");
+            context.quit = true;
+            return false;
+        }
+        
+        
         BitmapFont font;
         uint32 fontSize = 24;
         
-        bool result;
+        
         
         if(!parameters->dontMark || parameters->labelsCount > 0){
             FileContents fontFile;
@@ -196,7 +218,7 @@
             
             
             uint8 skipped = 0;
-            int32 markY = MIN(MAX(0, (int32) length(programContext.mark - programContext.sortedPoints[0]) - fontSize/2), programContext.blockSize - fontSize);
+            int32 markY = MIN(MAX(0, (int32) programContext.markOffset - fontSize/2), programContext.blockSize - fontSize);
             for(uint8 i = 0; i < parameters->blocksCount; i++){
                 if(parameters->dontInput[i]){
                     skipped++;
@@ -220,7 +242,7 @@
             if(parameters->isManual){
                 bordersX = 0;
             }
-            uint32 colW = (uint32)(programContext.bitmap.info.width*(1.0f-bordersX)) / parameters->columns;
+            uint32 colW = (uint32)((programContext.bitmap.info.width-markOffset)*(1.0f-bordersX)) / parameters->columns;
             result = scaleCanvas(&programContext.bitmap, programContext.bitmap.info.width, programContext.bitmap.info.height + colW * (parameters->blocksCount - parameters->skip), 0, 0);
             if(!result){
                 printf("Error: IP failed to scale image for the labels.\n");
@@ -405,9 +427,13 @@
                 degAngle *= -1;
             }
             
-            rotateImage(&programContext.bitmap, degAngle, programContext.rotationCenter.x, programContext.rotationCenter.y);
+            bool result =rotateImage(&programContext.bitmap, degAngle, programContext.rotationCenter.x, programContext.rotationCenter.y);
             
-            
+            if(!result){
+                printf("Error: IP failed to rotate image\n");
+                context.quit = true;
+                return;
+            }
             
             
             /*
@@ -716,168 +742,121 @@
             return;
         }
         
-        uint32 blockHeight = candidates[candidateIndex];
-        uint8 totalBlocks = 0;
         
-        for(uint8 cropIndex = 0; cropIndex < parameters->blocksCount; cropIndex++){
-            if(!parameters->dontInput[cropIndex]){
-                moveImageBlock(&programContext.bitmap, (uint32)(((float32)cropIndex / parameters->blocksCount)*programContext.bitmap.info.height), totalBlocks * blockHeight, blockHeight);
-                totalBlocks++;
-            }
-        }
-        
-        programContext.bitmap.info.height = totalBlocks*blockHeight;
-        
-        BitmapFont font;
-        
-        uint32 colW;
-        uint32 markOffset;
-        
-        float32 bordersX;
+        programContext.blockSize = candidates[candidateIndex];
         
         
         
+        uint8 markOffset = 0;
         
-        //we are going to print
-        if(parameters->labelsCount != 0 || !parameters->dontMark){
-            FileContents fontFile;
-            bool result = readFile("font.bmp", &fontFile);
-            ASSERT(result);
-            if(!result){
-                printf("Error: system failed to read font file.\n");
-                context.quit = true;
-                return;
-            }
-            Image source;
-            result = decodeBMP(&fontFile, &source);
-            if(!result){
-                printf("Error: failed to decode BMP font file, perhaps it has incorrect format.\n");
-                context.quit = true;
-                return;
-            }
-            result = flipY(&source);
-            if(!result){
-                printf("Error: IP failed to flip font image.\n");
-                context.quit = true;
-                return;
-            }
-            result = initBitmapFont(&font, &source, source.info.width / 16); 
-            if(!result){
-                printf("Error: failed to init font file.\n");
-                context.quit = true;
-                return;
-            }
-            uint32 fontSize = 24;
+        float32 bordersX = 0.03f;
+        
+        float32 topBorder = 0.1f;
+        
+        
+        
+        uint32 colW = (uint32)(programContext.bitmap.info.width * (1-bordersX)) / (parameters->columns == 0 ? 20 : parameters->columns);
+        
+        
+        if(!parameters->dontMark){
+            
+            struct Cluster{
+                uint32 startY;
+                uint32 endY;
+            };
+            
+            Cluster mark;
             
             
-            markOffset = 0;
+            uint8 markGradientThreshold = 4;
+            uint8 markIntensityThreshold = 15;
+            uint16 k = 3;
+            uint8 * pixelKArea = &PUSHA(uint8, k*k);
+            bool lastCluster = false;
+            uint32 currentAverage = 0;
+            //kNN sort of clustering
             
-            bordersX = 0.03f;
-            
-            float32 topBorder = 0.1f;
-            
-            
-            
-            colW = (uint32)(programContext.bitmap.info.width * (1-bordersX)) / (parameters->columns == 0 ? 20 : parameters->columns);
+            uint8 markIntensityDifferenceThreshold = 10;
+            float32 clusterMembershipQuorum = 0.3f;
+            float32 clusterWidthQuorum = 0.4f;
+            uint8 clusterMinimum = 0;
             
             
-            if(!parameters->dontMark){
-                
-                struct Cluster{
-                    uint32 startY;
-                    uint32 endY;
-                };
-                
-                Cluster mark;
-                
-                
-                uint8 markGradientThreshold = 4;
-                uint8 markIntensityThreshold = 15;
-                uint16 k = 3;
-                uint8 * pixelKArea = &PUSHA(uint8, k*k);
-                bool lastCluster = false;
-                uint32 currentAverage = 0;
-                //kNN sort of clustering
-                
-                uint8 markIntensityDifferenceThreshold = 10;
-                float32 clusterMembershipQuorum = 0.3f;
-                float32 clusterWidthQuorum = 0.4f;
-                uint8 clusterMinimum = 0;
-                
-                
-                //finding the left side mark
-                int16 markIndex = -1;
-                
-                
-                for(uint32 y = (k + (uint32)(topBorder*programContext.bitmap.info.height)); y < programContext.bitmap.info.height - k; y++){
-                    currentAverage = 0;
-                    uint32 averageIntensity = 0;
-                    for(uint32 x = k + (uint32)((bordersX/2)*programContext.bitmap.info.width); x < colW + (uint32)((bordersX/2)*programContext.bitmap.info.width); x++){
-                        if(gradients[y * programContext.bitmap.info.width + x].size > markGradientThreshold &&
-                           programContext.bitmap.data[y * programContext.bitmap.info.width + x] > markIntensityThreshold){
-                            
-                            uint16 areasize = 0;
-                            for(uint32 kX = x - k; kX < colW + (uint32)((bordersX/2)*programContext.bitmap.info.width) && kX < x + k + 1; kX++){
-                                for(uint32 kY = y - k; kY < programContext.bitmap.info.height-1 && kY < y + k + 1; kY++){
-                                    pixelKArea[areasize] = programContext.bitmap.data[kY * programContext.bitmap.info.width + kX];
-                                    areasize++;
-                                }
-                            } 
-                            
-                            uint16 members = 0;
-                            for(uint16 pi = 0; pi < areasize; pi++){
-                                int16 difference = ((int16) pixelKArea[pi] - (int16) pixelKArea[k*(k*2+1) + k]);
-                                ASSERT(difference < 256);
-                                if(ABS(difference) >= markIntensityDifferenceThreshold || (lastCluster && pixelKArea[pi] >= clusterMinimum)){
-                                    members++;
-                                }
+            //finding the left side mark
+            int16 markIndex = -1;
+            
+            
+            for(uint32 y = (k + (uint32)(topBorder*programContext.bitmap.info.height)); y < programContext.bitmap.info.height - k; y++){
+                currentAverage = 0;
+                uint32 averageIntensity = 0;
+                for(uint32 x = k + (uint32)((bordersX/2)*programContext.bitmap.info.width); x < colW + (uint32)((bordersX/2)*programContext.bitmap.info.width); x++){
+                    if(gradients[y * programContext.bitmap.info.width + x].size > markGradientThreshold &&
+                       programContext.bitmap.data[y * programContext.bitmap.info.width + x] > markIntensityThreshold){
+                        
+                        uint16 areasize = 0;
+                        for(uint32 kX = x - k; kX < colW + (uint32)((bordersX/2)*programContext.bitmap.info.width) && kX < x + k + 1; kX++){
+                            for(uint32 kY = y - k; kY < programContext.bitmap.info.height-1 && kY < y + k + 1; kY++){
+                                pixelKArea[areasize] = programContext.bitmap.data[kY * programContext.bitmap.info.width + kX];
+                                areasize++;
                             }
-                            
-                            if(members > clusterMembershipQuorum*(2*k+1)*(2*k+1)){
-                                currentAverage += 1;
-                                averageIntensity += programContext.bitmap.data[y*programContext.bitmap.info.width + x];
-                                //programContext.bitmap.data[y * programContext.bitmap.info.width + x] = 255;
-                            }else{
-                                //programContext.bitmap.data[y * programContext.bitmap.info.width + x] = 0;
+                        } 
+                        
+                        uint16 members = 0;
+                        for(uint16 pi = 0; pi < areasize; pi++){
+                            int16 difference = ((int16) pixelKArea[pi] - (int16) pixelKArea[k*(k*2+1) + k]);
+                            ASSERT(difference < 256);
+                            if(ABS(difference) >= markIntensityDifferenceThreshold || (lastCluster && pixelKArea[pi] >= clusterMinimum)){
+                                members++;
                             }
+                        }
+                        
+                        if(members > clusterMembershipQuorum*(2*k+1)*(2*k+1)){
+                            currentAverage += 1;
+                            averageIntensity += programContext.bitmap.data[y*programContext.bitmap.info.width + x];
+                            //programContext.bitmap.data[y * programContext.bitmap.info.width + x] = 255;
                         }else{
                             //programContext.bitmap.data[y * programContext.bitmap.info.width + x] = 0;
                         }
-                        
+                    }else{
+                        //programContext.bitmap.data[y * programContext.bitmap.info.width + x] = 0;
                     }
                     
-                    if(currentAverage > clusterWidthQuorum * colW){
-                        
-                        if(!lastCluster){
-                            mark.startY = y;
-                            clusterMinimum = averageIntensity / currentAverage;
-                        }
-                        lastCluster = true;
-                        /*for(uint32 x = 0; x < colW; x++){
-                        programContext.bitmap.data[y*programContext.bitmap.info.width + x] = 100;
-                        }*/
-                    }else{
-                        if(lastCluster){
-                            mark.endY = y;
-                            markIndex++;
-                        }
-                        lastCluster = false;
-                        
-                    }
-                    if(markIndex == parameters->targetMark){
-                        break;
-                    }
                 }
                 
-                ASSERT(markIndex == parameters->targetMark);
-                if(markIndex != parameters->targetMark){
-                    printf("Error: IP failed to find desired mark.\n");
-                    context.quit = true;
-                    return;
+                if(currentAverage > clusterWidthQuorum * colW){
+                    
+                    if(!lastCluster){
+                        mark.startY = y;
+                        clusterMinimum = averageIntensity / currentAverage;
+                    }
+                    lastCluster = true;
+                    /*for(uint32 x = 0; x < colW; x++){
+                    programContext.bitmap.data[y*programContext.bitmap.info.width + x] = 100;
+                    }*/
+                }else{
+                    if(lastCluster){
+                        mark.endY = y;
+                        markIndex++;
+                    }
+                    lastCluster = false;
+                    
                 }
-                
-                
+                if(markIndex == parameters->targetMark){
+                    break;
+                }
             }
+            
+            ASSERT(markIndex == parameters->targetMark);
+            if(markIndex != parameters->targetMark){
+                printf("Error: IP failed to find desired mark.\n");
+                context.quit = true;
+                return;
+            }
+            
+            programContext.markOffset = mark.startY;
+            
+            
+            
             /*
             FileContents bmp2;
             encodeBMP(&programContext.bitmap, &bmp2);
@@ -889,11 +868,9 @@
         }
         
         
-        
-        context.quit = true;
-        
-        postProcess(parameters);
-        saveFiles(parameters);
+        if(postProcess(parameters)){
+            saveFiles(parameters);
+        }
         context.quit = true;
         
         
@@ -1213,24 +1190,16 @@
                 dv2 halfVector = programContext.half[0] - programContext.sortedPoints[0];
                 programContext.blockSize = (uint32) length(halfVector);
                 
-                //now use only the valid blocks
-                uint8 skipped = 0;
-                for(uint8 i = 0; i < parameters->blocksCount; i++){
-                    if(parameters->dontInput[i]){
-                        int32 from = ((i+1-skipped) * programContext.blockSize);
-                        int32 to = (i-skipped) * programContext.blockSize;
-                        moveImageBlock(&programContext.bitmap, from, to, programContext.bitmap.info.height - from);
-                        skipped++;
-                    }
-                }
-                result = cropImageY(&programContext.bitmap, (parameters->blocksCount-skipped)*programContext.blockSize, 0);
+                halfVector = programContext.mark - programContext.sortedPoints[0];
+                programContext.markOffset = (uint32) length(halfVector);
                 
+                
+                result = postProcess(parameters);
+                ASSERT(result);
                 if(!result){
-                    printf("Error: IP failed to crop the image\n");
                     context.quit = true;
                     return;
                 }
-                postProcess(parameters);
                 
                 saveFiles(parameters);
                 context.quit = true;

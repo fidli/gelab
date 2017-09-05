@@ -5,11 +5,14 @@
 <body>
 <h1>GeLab - genetic experiment labeler</h1>
 <h2>Repository: <a href="https://github.com/fidli/gelab">GitHub</a> powered with <a href="https://github.com/fidli/baselib">baselib</a></h2>
-<h2>Latest release: ALPHA</h2>
+<h2>Latest release: Beta</h2>
+<img src="demo.png" />
 <h2>About</h2>
 <p>GeLab is genetic experiment labeler. Its aim is to fully or partially automatize uncreative labeling routines after the experiment is done.</p>
+<p>It is likely, that the CV part needs a lot of work, please, contact me, when it is not working the way you expect!</p>
+<p>It is highly unoptimized and runs in 1 thread. Please feel free to request features or demand optimization. I am open to extending this software. Please contact me at: info@fidli.eu</p>
 <h2>Usage</h2>
-<pre>Usage: build.exe inputfile [-b num_of_blocks] [-m "text" order] [-l list beginning_symbol_index -n total_column_count] [-i list] [-IM] outputfile
+<pre>Usage: gelab.exe inputfile [-b num_of_blocks] [-m "text" [order]] [-l list beginning_symbol_index -n total_column_count] [-i list] [-I] [-M] [-f] outputfile
 
  inputfile
   - original TIFF file from experiment
@@ -18,9 +21,9 @@
   - valid range [1, 50]
   - how many experiments are in inputfile - default: 1
 
- -m "text" order
+ -m "text" [order]
   - valid 'order' range [1, 255]
-  - find mark on place 'order' and put 'text' next to it, mark wont be added, if this is not set
+  - find mark on place 'order' and put 'text' next to it, mark wont be added, if this is not set, if -M is set, [order] MUST be omitted as it has no effect
 
  -l list beginning_symbol_index
   - valid 'beginning_symbol_range' range [1, 50]
@@ -40,11 +43,15 @@
  -M
   - crop and outline experiment manually. This option will pop up a window that requires interaction
 
+ -f
+  - do not prompt for file overwrite. Overwrite it.
+
  outputfile
-  - where to save the ouput to. THIS FILE WILL BE OVERWRITTEN</pre>
+  - where to save the ouput to. If file exists, you will be asked whether to overwrite the file.</pre>
 <h2>Download</h2>
 <ul>
-    <li>32 bit debug unstable alfa: <a href="gelab32alfadebug.zip">download</a></li>
+     <li>32 bit beta: <a href="gelab32beta.zip">download beta</a></li>
+    <li>32 bit debug unstable alfa: <a href="gelab32alfadebug.zip">download alfa</a></li>
 </ul>
 </body>
 </html>

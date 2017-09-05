@@ -226,7 +226,7 @@
     
     
     static inline void printHelp(const char * binaryName){
-        printf("\nUsage: %s inputfile [-b num_of_blocks] [-m \"text\" [order]] [-l list beginning_symbol_index -n total_column_count] [-i list] [-IM] [-f] outputfile\n\n", binaryName);
+        printf("\nUsage: %s inputfile [-b num_of_blocks] [-m \"text\" [order]] [-l list beginning_symbol_index -n total_column_count] [-i list] [-I] [-M] [-f] outputfile\n\n", binaryName);
         printf(" inputfile\n  - original TIFF file from experiment\n\n");
         printf(" -b num_of_blocks\n  - valid range [1, 50]\n  - how many experiments are in inputfile - default: 1\n\n"); 
         
@@ -242,7 +242,9 @@
         printf(" -f\n  - do not prompt for file overwrite. Overwrite it.\n\n");
         
         
-        printf(" outputfile\n  - where to save the ouput to. If file exists, you will be asked whether to overwrite the file.\n"); 
+        printf(" outputfile\n  - where to save the ouput to. If file exists, you will be asked whether to overwrite the file.\n\n"); 
+        
+        printf("Visit gelab.fidli.eu or contact me: info@fidli.eu for questions, feature requests or more.\n");
         
     }
     
@@ -274,6 +276,7 @@
                         }
                     }
                     if(success){
+                        
                         RunParameters * parameters = (RunParameters *) mem.persistent;
                         parameters->invertColors = true;
                         parameters->manualCrop = false;
@@ -322,11 +325,15 @@
                                         }break;
                                         case 'm':{
                                             int16 mark = 4068;
-                                            if(i >= argc - 2 || sscanf(argv[i+2], "%hd", &mark) || sscanf(argv[i+1], "%256%256s", parameters->markText) != 1){
+                                            
+                                            if(i >= argc - 2 ||sscanf(argv[i+1], "%256%256s", parameters->markText) != 1){
                                                 printf("Error: Invalid parameter -m\n");
                                                 valid = false;
                                                 break;
                                             };
+                                            
+                                            int8 m = sscanf(argv[i+2], "%hd", &mark);
+                                            
                                             if((mark < 1 || mark > 255) && mark != 4068){
                                                 printf("Error: Invalid mark order, available range is [1,255]\n");
                                                 valid = false;
@@ -338,7 +345,7 @@
                                                 parameters->targetMark = mark-1;
                                             }
                                             parameters->dontMark = false;
-                                            i += 2;
+                                            i += 1 + m;
                                         }break;
                                         case 'l':{
                                             int16 index;
@@ -454,7 +461,7 @@
                                     }
                                 }
                             }
-                            if(!parameters->dontMark && parameters->targetMark == -1 && !parameters->isManual){
+                            if(!parameters->dontMark && parameters->targetMark == (uint8)-1 && !parameters->isManual){
                                 senseCheck = false;
                                 printf("Error: Invalid parameter -m. Please specify mark index you would like to set.\n");
                             }
@@ -471,7 +478,7 @@
                                 if(!parameters->forceSave && fileExists(parameters->outputfile)){
                                     bool sat = false;
                                     while(!sat){
-                                        printf("\nFile '%s' exists. Overwrite? (y/n): ", parameters->outputfile);
+                                        printf("\nOutput file '%s' exists. Overwrite? (y/n): ", parameters->outputfile);
                                         char reply;
                                         while(scanf("%c", &reply) == 1){
                                             if(reply == 'n'){
@@ -492,8 +499,9 @@
                                     Image renderingTarget;
                                     Color red;
                                     Color green;
-                                    red.full = 0x00FF0000;
+                                    red.full = 0xF0FF0000;
                                     green.full = 0x0000FF00;
+                                    
                                     renderingTarget.info.bitsPerSample = 8;
                                     renderingTarget.info.samplesPerPixel = 4;
                                     renderingTarget.info.interpretation = BitmapInterpretationType_ARGB;
@@ -689,11 +697,7 @@
                                                     }
                                                 }
                                                 
-                                                if(programContext.state == ProgramState_SelectMarks || programContext.state == ProgramState_SelectHalf){
-                                                    if(GetCursor() == NULL){
-                                                        cursor = SetCursor(cursor);
-                                                    }
-                                                }
+                                                
                                                 
                                                 
                                                 
@@ -790,7 +794,11 @@
                                                             
                                                             pt1 = line[0] + shift;
                                                             pt2 = line[1] + shift;
-                                                            drawLine(&renderingTarget, &pt1, &pt2, currentColor);
+                                                            if(i == 0 && programContext.state == ProgramState_SelectHalf){
+                                                                drawLine(&renderingTarget, &pt1, &pt2, currentColor, 5);
+                                                            }else{
+                                                                drawLine(&renderingTarget, &pt1, &pt2, currentColor);
+                                                            }
                                                             if(parameters->dontInput[i]){
                                                                 dv2 shift2 = (i - 1) * (line[0] - programContext.sortedPoints[0]);
                                                                 dv2 pt1p = line[0] + shift2;
@@ -814,6 +822,20 @@
                                                             }
                                                         }
                                                     }
+                                                    
+                                                }
+                                                
+                                                //draw cursor at mouse
+                                                if(programContext.state == ProgramState_SelectHalf){
+                                                    uint8 cursize = 32;
+                                                    v2 vec = cursize*normalize(programContext.sortedPoints[1] - programContext.sortedPoints[0]);
+                                                    dv2 pt1 = programContext.mouse - DV2((int32)vec.x, (int32)vec.y);
+                                                    dv2 pt2 = programContext.mouse + DV2((int32)vec.x, (int32)vec.y);
+                                                    drawLine(&renderingTarget, &pt1, &pt2,  red, 5);
+                                                    pt1 = programContext.mouse;
+                                                    vec = cursize *normalize(programContext.sortedPoints[3] - programContext.sortedPoints[0]);
+                                                    pt2 = programContext.mouse + DV2((int32)vec.x, (int32)vec.y);
+                                                    drawLine(&renderingTarget, &pt1, &pt2,  red, 5);
                                                     
                                                 }
                                                 
